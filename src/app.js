@@ -38,7 +38,7 @@ function readControl(question) {
   const control = controls.get(question.id);
   if (!control) return "";
 
-  if (question.type === "rating") {
+  if (question.type === "rating" || question.type === "yesNoNa" || question.type === "radio") {
     const checked = control.querySelector("input:checked");
     return checked ? checked.value : "";
   }
@@ -90,6 +90,9 @@ function renderQuestion(question, value) {
       return renderSelect(question, value);
     case "rating":
       return renderRating(question, value);
+    case "yesNoNa":
+    case "radio":
+      return renderRadio(question, value);
     case "date":
       return renderTextLike(question, value, "date");
     default:
@@ -124,7 +127,7 @@ function renderTextarea(question, value) {
   caption.textContent = question.label;
 
   const textarea = document.createElement("textarea");
-  textarea.rows = 4;
+  textarea.rows = Number.isFinite(question.rows) ? question.rows : 4;
   if (question.placeholder) textarea.placeholder = question.placeholder;
   textarea.value = value == null ? "" : String(value);
 
@@ -161,6 +164,46 @@ function renderSelect(question, value) {
   label.append(caption, select);
   controls.set(question.id, select);
   return label;
+}
+
+function questionText(question) {
+  if (question.number == null || question.number === "") return question.label;
+  return `${question.number}. ${question.label}`;
+}
+
+function renderRadio(question, value) {
+  const choices = Array.isArray(question.options) && question.options.length > 0
+    ? question.options
+    : ["Yes", "No", "N/A"];
+
+  const fieldset = document.createElement("fieldset");
+  fieldset.className = "field";
+
+  const legend = document.createElement("legend");
+  legend.textContent = questionText(question);
+  fieldset.append(legend);
+
+  const row = document.createElement("div");
+  row.className = "yes-no-na";
+
+  for (const choice of choices) {
+    const choiceLabel = document.createElement("label");
+    const input = document.createElement("input");
+    input.type = "radio";
+    input.name = question.id;
+    input.value = choice;
+    input.checked = String(value) === choice;
+
+    const text = document.createElement("span");
+    text.textContent = choice;
+
+    choiceLabel.append(input, text);
+    row.append(choiceLabel);
+  }
+
+  fieldset.append(row);
+  controls.set(question.id, fieldset);
+  return fieldset;
 }
 
 function renderRating(question, value) {
@@ -207,7 +250,7 @@ function formatSummary(answers) {
     for (const question of segment.questions) {
       const raw = answers[question.id];
       const text = raw == null ? "" : String(raw).trim();
-      lines.push(`${question.label}: ${text || "(blank)"}`);
+      lines.push(`${questionText(question)}: ${text || "(blank)"}`);
     }
     blocks.push(lines.join("\n"));
   }

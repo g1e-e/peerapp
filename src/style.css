@@ -104,6 +104,32 @@ legend {
   font-size: 0.92rem;
   font-weight: 600;
   padding: 0;
+  line-height: 1.4;
+}
+
+fieldset.field legend {
+  width: 100%;
+}
+
+.yes-no-na {
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 1.5rem;
+}
+
+.yes-no-na label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-weight: 400;
+  cursor: pointer;
+}
+
+.yes-no-na input {
+  width: auto;
+  margin: 0;
+  accent-color: var(--accent);
 }
 
 input,
