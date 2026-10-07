@@ -10,7 +10,7 @@ python3 -m http.server
 
 Then open `http://localhost:8000`. The published GitHub Pages site loads the form the same way.
 
-The page is split in two. The left side is the questionnaire. The right side is an empty panel reserved for a reference PDF. On a phone the two panels stack, with the questionnaire on top. Each panel scrolls on its own.
+The page is split in two. The left side is the questionnaire. The right side shows a reference PDF: drop a `.pdf` file on the panel, or use **Choose PDF**. The file stays in this browser and is not uploaded. **Replace** and **Remove** sit above the document. A reload clears the PDF. On a phone the two panels stack, with the questionnaire on top. Each panel scrolls on its own.
 
 Answers are saved in the browser (`localStorage`) as you type and restored on reload. **Submit** shows a summary you can copy. **Clear** erases the saved answers.
 

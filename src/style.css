@@ -245,6 +245,7 @@ select:focus-visible,
 }
 
 .pane-pdf {
+  position: relative;
   padding: 1rem;
   background: var(--pdf);
   border-left: 1px solid var(--line);
@@ -254,13 +255,25 @@ select:focus-visible,
   height: 100%;
   min-height: 12rem;
   display: flex;
-  align-items: center;
-  justify-content: center;
-  text-align: center;
+  flex-direction: column;
   border: 2px solid #9eb0c2;
   border-radius: 14px;
   background: #fff;
   color: var(--muted);
+  overflow: hidden;
+}
+
+.pane-pdf.is-dragover .pdf-frame {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  box-shadow: inset 0 0 0 3px var(--accent);
+}
+
+.pdf-empty {
+  margin: auto;
+  padding: 1.25rem;
+  max-width: 24rem;
+  text-align: center;
 }
 
 .pdf-empty h2 {
@@ -272,6 +285,101 @@ select:focus-visible,
 
 .pdf-empty p {
   margin: 0;
+}
+
+.pdf-empty .pdf-hint {
+  margin-top: 0.35rem;
+  font-size: 0.9rem;
+}
+
+.pdf-empty .button {
+  margin-top: 0.9rem;
+}
+
+.pdf-message {
+  margin: 0;
+  padding: 0.55rem 0.75rem;
+  background: #fdecea;
+  color: #8a3324;
+  font-size: 0.92rem;
+  text-align: center;
+}
+
+.pdf-viewer:not([hidden]) {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.pdf-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.4rem 0.6rem;
+  padding: 0.45rem 0.65rem;
+  border-bottom: 1px solid var(--line);
+  background: #f8fbfc;
+}
+
+.pdf-filename {
+  margin: 0;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--ink);
+  font-size: 0.9rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pdf-toolbar-actions {
+  display: flex;
+  gap: 0.4rem;
+}
+
+.pdf-toolbar .button {
+  padding: 0.35rem 0.7rem;
+  font-size: 0.92rem;
+}
+
+.pdf-viewer iframe {
+  flex: 1 1 auto;
+  width: 100%;
+  min-height: 0;
+  border: 0;
+  background: #fff;
+}
+
+.pdf-overlay:not([hidden]) {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.pdf-overlay p {
+  margin: 0;
+  padding: 0.55rem 0.9rem;
+  border-radius: 999px;
+  background: #fff;
+  color: var(--accent-dark);
+  font-weight: 600;
+  opacity: 0;
+}
+
+.pane-pdf.is-dragover .pdf-overlay p {
+  opacity: 1;
+}
+
+.pdf-input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  opacity: 0;
 }
 
 @media (max-width: 760px) {
