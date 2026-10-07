@@ -1,6 +1,7 @@
 // Password gate for the Drive submissions. The password stays in this tab.
 
 import { driveConfigured, postToDrive } from "./drive.js";
+import { mountPrep } from "./prep.js";
 
 const PASSWORD_KEY = "peerapp-admin-password";
 
@@ -13,10 +14,15 @@ const board = document.querySelector("#admin-board");
 const boardMessage = document.querySelector("#admin-board-message");
 const list = document.querySelector("#admin-list");
 const detail = document.querySelector("#admin-detail");
+const reviewsPanel = document.querySelector("#reviews-panel");
+const submissionsPanel = document.querySelector("#submissions-panel");
+const submissionFilter = document.querySelector("#submission-filter");
 
 let adminPassword = "";
 let submissions = [];
 let selectedId = "";
+let submissionFilterValue = "all";
+let prep = null;
 
 function showMessage(element, text, tone) {
   element.hidden = !text;
@@ -53,17 +59,24 @@ function preview(submission) {
   return parts.join(" · ");
 }
 
+function visibleSubmissions() {
+  if (submissionFilterValue === "all") return submissions;
+  if (submissionFilterValue === "none") return submissions.filter((item) => !item.reviewId);
+  return submissions.filter((item) => item.reviewId === submissionFilterValue);
+}
+
 function renderList() {
   list.replaceChildren();
-  if (submissions.length === 0) {
+  const visible = visibleSubmissions();
+  if (visible.length === 0) {
     const item = document.createElement("li");
     item.className = "admin-empty";
-    item.textContent = "No submissions yet.";
+    item.textContent = "No submissions to show.";
     list.append(item);
     return;
   }
 
-  for (const submission of submissions) {
+  for (const submission of visible) {
     const item = document.createElement("li");
     const button = document.createElement("button");
     button.type = "button";
@@ -95,6 +108,12 @@ function renderDetail(submission) {
   const heading = document.createElement("h2");
   heading.textContent = formatWhen(submission.submittedAt);
   detail.append(heading);
+  if (submission.reviewName) {
+    const reviewLine = document.createElement("p");
+    reviewLine.className = "admin-who";
+    reviewLine.textContent = submission.reviewName;
+    detail.append(reviewLine);
+  }
 
   const sections = Array.isArray(submission.answers) ? submission.answers : null;
   if (!sections) {
@@ -154,6 +173,35 @@ function showBoard() {
   showMessage(loginMessage, "");
 }
 
+function showTab(name) {
+  const reviews = name === "reviews";
+  reviewsPanel.hidden = !reviews;
+  submissionsPanel.hidden = reviews;
+  document.querySelector("#tab-reviews").classList.toggle("is-selected", reviews);
+  document.querySelector("#tab-submissions").classList.toggle("is-selected", !reviews);
+}
+
+function fillReviewFilter(reviews) {
+  const current = submissionFilterValue;
+  submissionFilter.replaceChildren();
+  const all = document.createElement("option");
+  all.value = "all";
+  all.textContent = "All submissions";
+  const none = document.createElement("option");
+  none.value = "none";
+  none.textContent = "No review";
+  submissionFilter.append(all, none);
+  for (const review of reviews) {
+    const option = document.createElement("option");
+    option.value = review.id;
+    option.textContent = review.name || review.id;
+    submissionFilter.append(option);
+  }
+  const stillThere = [...submissionFilter.options].some((option) => option.value === current);
+  submissionFilter.value = stillThere ? current : "all";
+  submissionFilterValue = submissionFilter.value;
+}
+
 async function loadSubmissions() {
   showMessage(boardMessage, "");
   const data = await postToDrive({ action: "list", password: adminPassword });
@@ -173,8 +221,10 @@ async function unlock(password) {
   showMessage(loginMessage, "");
   try {
     await loadSubmissions();
+    await prep.refresh();
     sessionStorage.setItem(PASSWORD_KEY, password);
     showBoard();
+    showTab("reviews");
   } catch (err) {
     adminPassword = "";
     sessionStorage.removeItem(PASSWORD_KEY);
@@ -197,7 +247,7 @@ function lock() {
   showLogin();
 }
 
-function authFailure(message) {
+function isAuthFailure(message) {
   return message === "Wrong password"
     || message === "Too many attempts, try again later"
     || message === "Admin password is not set";
@@ -218,7 +268,7 @@ async function deleteSubmission(submission) {
     renderList();
   } catch (err) {
     const message = err.message || "Could not delete the submission.";
-    if (authFailure(message)) {
+    if (isAuthFailure(message)) {
       lock();
       showMessage(loginMessage, message, "error");
       return;
@@ -241,9 +291,10 @@ if (!driveConfigured()) {
     button.disabled = true;
     try {
       await loadSubmissions();
+      await prep.refresh();
     } catch (err) {
       const message = err.message || "Could not refresh.";
-      if (authFailure(message)) {
+      if (isAuthFailure(message)) {
         lock();
         showMessage(loginMessage, message, "error");
         return;
@@ -255,6 +306,25 @@ if (!driveConfigured()) {
   });
 
   document.querySelector("#admin-lock").addEventListener("click", lock);
+
+  document.querySelector("#tab-reviews").addEventListener("click", () => showTab("reviews"));
+  document.querySelector("#tab-submissions").addEventListener("click", () => showTab("submissions"));
+  submissionFilter.addEventListener("change", () => {
+    submissionFilterValue = submissionFilter.value;
+    selectedId = "";
+    resetDetail();
+    renderList();
+  });
+
+  prep = mountPrep(reviewsPanel, {
+    getPassword: () => adminPassword,
+    isAuthFailure,
+    onAuthFailure(message) {
+      lock();
+      showMessage(loginMessage, message, "error");
+    },
+    onReviews: fillReviewFilter,
+  });
 
   const saved = sessionStorage.getItem(PASSWORD_KEY);
   if (saved) {

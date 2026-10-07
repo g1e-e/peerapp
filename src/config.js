@@ -5,3 +5,6 @@
 // and the admin page says it is not configured.
 
 export const APPS_SCRIPT_URL = "";
+
+// Subject links always use the public GitHub Pages address.
+export const REVIEW_LINK_PREFIX = "https://g1e-e.github.io/peerapp/?review=";

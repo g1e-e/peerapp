@@ -2,28 +2,65 @@
 // and shows a summary when the reviewer clicks Submit.
 
 import { driveConfigured, postToDrive } from "./drive.js";
-import { segments } from "./questions.js";
+import { openPdf } from "./pdfjs.js";
+import { buildSegments, clampIncidentCount, MAX_INCIDENTS } from "./questions.js";
+import { createReferenceView } from "./reference-view.js";
+import { downloadReviewPdf } from "./review-transfer.js";
 
-const STORAGE_KEY = "peer-review-answers";
+const STANDALONE_KEY = "peer-review-answers";
+const OLD_INCIDENT_KEY = /^incident[12](PatientName|Mrn|SurgeryDate|Number|Surgeon|Procedure|EventReview|ReviewedBy|ReviewDate)$/;
+
+const reviewId = new URLSearchParams(window.location.search).get("review") || "";
+let reviewMode = false;
+let reviewName = "";
+let reviewPages = {};
+let incidentCount = 0;
+let segments = buildSegments(0);
+let activeQuestionId = "";
 
 const form = document.querySelector("#review-form");
 const summary = document.querySelector("#summary");
 const clearButton = document.querySelector("#clear-button");
 const submitButton = document.querySelector("#submit-button");
 const submitStatus = document.querySelector("#submit-status");
+const incidentActions = document.querySelector("#incident-actions");
+const reviewBanner = document.querySelector("#review-banner");
+const reviewViewRoot = document.querySelector("#review-view");
+const referenceView = createReferenceView(reviewViewRoot);
 
 // question id -> the input, textarea, select, or rating group
 const controls = new Map();
 
-function loadAnswers() {
+function storageKey() {
+  return reviewId ? `${STANDALONE_KEY}:${reviewId}` : STANDALONE_KEY;
+}
+
+function cleanAnswers(answers) {
+  const clean = {};
+  for (const [key, value] of Object.entries(answers || {})) {
+    if (OLD_INCIDENT_KEY.test(key)) continue;
+    clean[key] = value;
+  }
+  return clean;
+}
+
+function loadState() {
   try {
-    const saved = localStorage.getItem(STORAGE_KEY);
-    if (!saved) return {};
+    const saved = localStorage.getItem(storageKey());
+    if (!saved) return { incidentCount: 0, answers: {} };
     const parsed = JSON.parse(saved);
-    if (!parsed || typeof parsed !== "object") return {};
-    return parsed;
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+      return { incidentCount: 0, answers: {} };
+    }
+    if (parsed.answers && typeof parsed.answers === "object" && !Array.isArray(parsed.answers)) {
+      return {
+        incidentCount: clampIncidentCount(parsed.incidentCount),
+        answers: cleanAnswers(parsed.answers),
+      };
+    }
+    return { incidentCount: 0, answers: cleanAnswers(parsed) };
   } catch {
-    return {};
+    return { incidentCount: 0, answers: {} };
   }
 }
 
@@ -49,8 +86,11 @@ function readControl(question) {
   return control.value;
 }
 
-function saveAnswers() {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(collectAnswers()));
+function saveState() {
+  localStorage.setItem(storageKey(), JSON.stringify({
+    incidentCount,
+    answers: collectAnswers(),
+  }));
 }
 
 function renderForm(answers) {
@@ -114,7 +154,29 @@ function renderQuestion(question, value) {
   }
 
   if (question.width === "half") field.classList.add("field-half");
+  field.dataset.questionId = question.id;
+  if (reviewMode) {
+    field.addEventListener("click", () => activateQuestion(question.id));
+    field.addEventListener("focusin", () => activateQuestion(question.id));
+  }
+  if (question.id === activeQuestionId) field.classList.add("is-active");
   return field;
+}
+
+function activateQuestion(id) {
+  activeQuestionId = id;
+  for (const field of form.querySelectorAll(".field.is-active")) {
+    field.classList.remove("is-active");
+  }
+  const field = form.querySelector(`[data-question-id="${CSS.escape(id)}"]`);
+  if (field) field.classList.add("is-active");
+
+  const pages = reviewPages[id] || [];
+  if (!pages.length) {
+    referenceView.showMessage("No reference pages for this question.");
+    return;
+  }
+  referenceView.showPages(pages);
 }
 
 function renderTextLike(question, value, inputType) {
@@ -337,7 +399,7 @@ function hideSubmitStatus() {
 async function onSubmit(event) {
   event.preventDefault();
   const answers = collectAnswers();
-  saveAnswers();
+  saveState();
   showSummary(answers);
 
   if (!driveConfigured()) {
@@ -349,10 +411,15 @@ async function onSubmit(event) {
   const label = submitButton.textContent;
   submitButton.textContent = "Submitting…";
   try {
-    await postToDrive({
+    const payload = {
       action: "submit",
       answers: answersForDrive(answers),
-    });
+    };
+    if (reviewMode) {
+      payload.reviewId = reviewId;
+      payload.reviewName = reviewName;
+    }
+    await postToDrive(payload);
     showSubmitStatus("Submitted", "success");
   } catch (err) {
     showSubmitStatus(err.message || "Could not save to Drive.", "error");
@@ -369,19 +436,120 @@ function onClear() {
   );
   if (!confirmed) return;
 
-  localStorage.removeItem(STORAGE_KEY);
+  localStorage.removeItem(storageKey());
   renderForm({});
   summary.hidden = true;
   summary.replaceChildren();
   hideSubmitStatus();
 }
 
-renderForm(loadAnswers());
-
-form.addEventListener("input", saveAnswers);
-form.addEventListener("change", saveAnswers);
+form.addEventListener("input", saveState);
+form.addEventListener("change", saveState);
 form.addEventListener("submit", onSubmit);
 clearButton.addEventListener("click", onClear);
+
+document.querySelector("#add-incident").addEventListener("click", () => {
+  if (reviewMode || incidentCount >= MAX_INCIDENTS) return;
+  const answers = collectAnswers();
+  incidentCount += 1;
+  segments = buildSegments(incidentCount);
+  renderForm(answers);
+  saveState();
+  updateIncidentButtons();
+});
+
+document.querySelector("#remove-incident").addEventListener("click", () => {
+  if (reviewMode || incidentCount <= 0) return;
+  const answers = collectAnswers();
+  const prefix = `incident${incidentCount}.`;
+  const hasAnswers = Object.keys(answers).some((key) => key.startsWith(prefix) && String(answers[key] || "").trim());
+  if (hasAnswers && !window.confirm("Remove the last incident and its answers?")) return;
+  incidentCount -= 1;
+  segments = buildSegments(incidentCount);
+  renderForm(answers);
+  saveState();
+  updateIncidentButtons();
+});
+
+function updateIncidentButtons() {
+  incidentActions.hidden = reviewMode;
+  document.querySelector("#add-incident").disabled = incidentCount >= MAX_INCIDENTS;
+  document.querySelector("#remove-incident").disabled = incidentCount === 0;
+}
+
+function showReviewFailure(message) {
+  document.querySelector("#pdf-panel").classList.remove("is-review");
+  reviewViewRoot.hidden = true;
+  form.replaceChildren();
+  const note = document.createElement("p");
+  note.className = "load-note";
+  note.textContent = message;
+  form.append(note);
+}
+
+async function enterReview() {
+  const panel = document.querySelector("#pdf-panel");
+  panel.classList.add("is-review");
+  reviewViewRoot.hidden = false;
+  incidentActions.hidden = true;
+  referenceView.showProgress("Loading review…", 0);
+
+  const hold = document.createElement("p");
+  hold.className = "segment-note";
+  hold.textContent = "Loading review…";
+  form.append(hold);
+
+  if (!driveConfigured()) {
+    showReviewFailure("This review link needs Google Drive, which is not set up yet.");
+    return;
+  }
+
+  let review;
+  try {
+    const data = await postToDrive({ action: "getReview", reviewId });
+    review = data.review;
+  } catch (err) {
+    showReviewFailure(err.message || "Could not open this review.");
+    return;
+  }
+
+  reviewMode = true;
+  reviewName = review.name || "Review";
+  reviewPages = review.pages || {};
+  incidentCount = clampIncidentCount(review.incidentCount);
+  segments = buildSegments(incidentCount);
+  renderForm(loadState().answers);
+  saveState();
+  updateIncidentButtons();
+  reviewBanner.hidden = false;
+  reviewBanner.textContent = reviewName;
+
+  try {
+    referenceView.showProgress("Loading reference PDF…", 0);
+    const bytes = await downloadReviewPdf(reviewId, (done, total) => {
+      referenceView.showProgress(`Loading reference PDF… part ${done} of ${total}`, done / total);
+    });
+    referenceView.setPdf(await openPdf(bytes));
+    referenceView.showMessage("Select a question to see its reference pages.");
+  } catch (err) {
+    referenceView.showMessage(err.message || "Could not load the reference PDF.");
+  }
+}
+
+if (reviewId) {
+  const hold = document.createElement("p");
+  hold.className = "segment-note";
+  hold.textContent = "Loading review…";
+  form.append(hold);
+  enterReview();
+} else {
+  const state = loadState();
+  incidentCount = state.incidentCount;
+  segments = buildSegments(incidentCount);
+  renderForm(state.answers);
+  saveState();
+  updateIncidentButtons();
+}
 
 // Reference PDF. The file is shown with the browser's own viewer.
 // It stays in this tab only: nothing is uploaded, and a reload clears it.
@@ -502,6 +670,7 @@ pdfPanel.addEventListener("dragleave", (event) => {
 pdfPanel.addEventListener("drop", (event) => {
   event.preventDefault();
   endFileDrag();
+  if (reviewId) return;
   const file = event.dataTransfer.files[0];
   if (!file) {
     showPdfMessage("Please choose a PDF file.");

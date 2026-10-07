@@ -18,22 +18,26 @@ Answers are saved in the browser (`localStorage`) as you type and restored on re
 
 - `index.html` — page shell: questionnaire on the left, reference PDF panel on the right
 - `admin.html` — password-protected list of Drive submissions
-- `src/questions.js` — the form, as data. Edit this file to change sections and questions
+- `src/questions.js` — the four fixed sections, plus the incident template
 - `src/app.js` — draws the form, saves answers in the browser, and submits to Drive
-- `src/admin.js` — the submissions page
-- `src/config.js` — the Apps Script web app URL
-- `src/drive.js` — sends submit, list, and delete requests
+- `src/admin.js` — the admin page (reviews and submissions)
+- `src/prep.js` — the screen where a review is prepared
+- `src/config.js` — the Apps Script web app URL and the public review-link prefix
+- `src/drive.js` — sends requests to the web app
+- `src/pdfjs.js` — loads PDF.js from jsDelivr (version 6.4.299)
 - `src/style.css` — layout and styling
 - `apps-script/Code.gs` — the script to deploy from your Google account. GitHub Pages does not run it
 - `package.json` and `src/index.js` — leftover Node starter files. The website does not use them
 
 ## How to edit questions
 
-Open `src/questions.js`. The form is the `segments` list. Each segment has a `title` and a `questions` list, and shows up as its own section.
+Open `src/questions.js`. The four sections that are always shown are the `segments` list. Each segment has a `title` and a `questions` list.
+
+Incident questions live once, in `incidentTemplate`. A review chooses how many copies to show (0 to 10). On the plain page, with no review link, use **Add incident** and **Remove incident**. Each copy is titled Peer Review - Incident 1, 2, and so on. Ids look like `incident1.patientName`, so the copies stay separate.
 
 Each question needs:
 
-- `id` — a unique name. Answers are saved under this id, so do not reuse one (the two incident sections use ids like `incident1PatientName` and `incident2PatientName` so they stay separate)
+- `id` — a unique name. Answers are saved under this id, so do not reuse one. Incident copies add the number for you (`incident1.patientName`)
 - `label` — the text shown on the form
 - `type` — one of `text`, `textarea`, `date`, `select`, `rating`, `yesNoNa`, or `radio`
 
@@ -61,6 +65,20 @@ Submissions are saved by a Google Apps Script web app in your Google account. Th
 4. Choose **Deploy > New deployment**. Pick **Web app**. Set **Execute as** to **Me** and **Who has access** to **Anyone**. Deploy, then authorize the app.
 5. Copy the web app URL (it ends in `/exec`) into `src/config.js` as `APPS_SCRIPT_URL`.
 
-The first submission creates a Drive folder named `peerapp submissions`. Each submit adds a JSON file there.
+The script creates three Drive folders when they are first needed: `peerapp submissions` (answer files, with a subfolder per review), `peerapp reviews` (the review and its PDF), and `peerapp tmp` (upload pieces, removed after the PDF is assembled). Drive files stay private to your account. The site only sees them through the web app.
 
-After you change `Code.gs`, redeploy with **Deploy > Manage deployments > edit (pencil) > New version**. That keeps the same URL. Then refresh the site. Until `APPS_SCRIPT_URL` is filled in, Submit still shows the on-page summary and says Drive is not set up, and the admin page says it is not configured.
+If you already deployed an older copy of `Code.gs`, replace the whole script with the file in this repo, then redeploy with **Deploy > Manage deployments > edit (pencil) > New version**. That keeps the same `/exec` URL. `ADMIN_PASSWORD` can stay as it is. You do not need to create the folders yourself.
+
+Until `APPS_SCRIPT_URL` is filled in, Submit still shows the on-page summary and says Drive is not set up, and the admin page says it is not configured.
+
+## Preparing a review
+
+1. Open the **Admin** link, enter the password, and stay on **Reviews**.
+2. Choose **New review** and give it a name.
+3. Set **Number of incidents** (0 to 10). The page shows that many Peer Review - Incident sections. Lowering the number drops page assignments for the incidents you remove, and asks first if any were set.
+4. Drop in the reference PDF, or choose a file. It can be large, but it must be under about 45 MB. The file uploads in pieces.
+5. For any question, type the PDF pages to show, like `3-7, 12, 40-45`. A question can have up to 50 pages. Click the question to preview those pages.
+6. Choose **Save review**. Copy the subject link. It looks like `https://g1e-e.github.io/peerapp/?review=` followed by a long id. That id is the only key the subject needs.
+7. **Open** edits a review later. **Submissions** lists the answers, and **Show** can limit the list to one review.
+
+Someone who opens the site without `?review=` can still drop a PDF locally. Subjects should use the link they were sent. Their answers are stored in the browser separately for each review.

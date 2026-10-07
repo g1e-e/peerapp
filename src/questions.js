@@ -1,7 +1,12 @@
 // The peer review form.
 //
 // Edit this list to add, remove, or reword questions.
-// Each segment is one section on the page. It has a title and its own questions.
+// `segments` is the four sections that are always on the form.
+// Incident sections are not listed here. `incidentTemplate` is the one copy
+// of those fields. A review says how many incidents to show (0 to 10).
+// Each copy is titled "Peer Review - Incident 1", and so on.
+// Question ids inside a copy are prefixed, like incident1.patientName,
+// so two incidents never share an answer.
 //
 // Every question needs:
 //   id    — unique across the whole form (answers are saved under this id)
@@ -164,126 +169,92 @@ export const segments = [
       },
     ],
   },
-
-  // Same fields as Incident 2. Ids start with incident1 so the answers stay separate.
-  {
-    title: "Peer Review - Incident 1",
-    questions: [
-      {
-        id: "incident1PatientName",
-        label: "Patient name",
-        type: "text",
-        width: "half",
-      },
-      {
-        id: "incident1Mrn",
-        label: "MRN",
-        type: "text",
-        width: "half",
-      },
-      {
-        id: "incident1SurgeryDate",
-        label: "Date of Surgery",
-        type: "date",
-        width: "half",
-      },
-      {
-        id: "incident1Number",
-        label: "Incident #",
-        type: "text",
-        width: "half",
-      },
-      {
-        id: "incident1Surgeon",
-        label: "Surgeon",
-        type: "text",
-        width: "half",
-      },
-      {
-        id: "incident1Procedure",
-        label: "Procedure",
-        type: "textarea",
-        rows: 2,
-      },
-      {
-        id: "incident1EventReview",
-        label: "Event/Routine review",
-        type: "textarea",
-        rows: 5,
-      },
-      {
-        id: "incident1ReviewedBy",
-        label: "Reviewed by",
-        type: "text",
-        width: "half",
-      },
-      {
-        id: "incident1ReviewDate",
-        label: "Date",
-        type: "date",
-        width: "half",
-      },
-    ],
-  },
-
-  // Same fields as Incident 1. Ids start with incident2 so the answers stay separate.
-  {
-    title: "Peer Review - Incident 2",
-    questions: [
-      {
-        id: "incident2PatientName",
-        label: "Patient name",
-        type: "text",
-        width: "half",
-      },
-      {
-        id: "incident2Mrn",
-        label: "MRN",
-        type: "text",
-        width: "half",
-      },
-      {
-        id: "incident2SurgeryDate",
-        label: "Date of Surgery",
-        type: "date",
-        width: "half",
-      },
-      {
-        id: "incident2Number",
-        label: "Incident #",
-        type: "text",
-        width: "half",
-      },
-      {
-        id: "incident2Surgeon",
-        label: "Surgeon",
-        type: "text",
-        width: "half",
-      },
-      {
-        id: "incident2Procedure",
-        label: "Procedure",
-        type: "textarea",
-        rows: 2,
-      },
-      {
-        id: "incident2EventReview",
-        label: "Event/Routine review",
-        type: "textarea",
-        rows: 5,
-      },
-      {
-        id: "incident2ReviewedBy",
-        label: "Reviewed by",
-        type: "text",
-        width: "half",
-      },
-      {
-        id: "incident2ReviewDate",
-        label: "Date",
-        type: "date",
-        width: "half",
-      },
-    ],
-  },
 ];
+
+// One copy of the incident form. Do not add incident1 / incident2 by hand.
+// buildSegments() stamps on the number.
+export const incidentTemplate = {
+  questions: [
+    {
+      id: "patientName",
+      label: "Patient name",
+      type: "text",
+      width: "half",
+    },
+    {
+      id: "mrn",
+      label: "MRN",
+      type: "text",
+      width: "half",
+    },
+    {
+      id: "surgeryDate",
+      label: "Date of Surgery",
+      type: "date",
+      width: "half",
+    },
+    {
+      id: "incidentNumber",
+      label: "Incident #",
+      type: "text",
+      width: "half",
+    },
+    {
+      id: "surgeon",
+      label: "Surgeon",
+      type: "text",
+      width: "half",
+    },
+    {
+      id: "procedure",
+      label: "Procedure",
+      type: "textarea",
+      rows: 2,
+    },
+    {
+      id: "eventReview",
+      label: "Event/Routine review",
+      type: "textarea",
+      rows: 5,
+    },
+    {
+      id: "reviewedBy",
+      label: "Reviewed by",
+      type: "text",
+      width: "half",
+    },
+    {
+      id: "reviewDate",
+      label: "Date",
+      type: "date",
+      width: "half",
+    },
+  ],
+};
+
+export const MAX_INCIDENTS = 10;
+
+export function incidentSegment(number) {
+  return {
+    title: `Peer Review - Incident ${number}`,
+    questions: incidentTemplate.questions.map((question) => ({
+      ...question,
+      id: `incident${number}.${question.id}`,
+    })),
+  };
+}
+
+export function buildSegments(incidentCount) {
+  const count = clampIncidentCount(incidentCount);
+  const incidents = [];
+  for (let number = 1; number <= count; number += 1) {
+    incidents.push(incidentSegment(number));
+  }
+  return segments.concat(incidents);
+}
+
+export function clampIncidentCount(value) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return 0;
+  return Math.min(MAX_INCIDENTS, Math.max(0, Math.floor(number)));
+}

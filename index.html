@@ -16,8 +16,13 @@
           <a class="admin-link" href="admin.html">Admin</a>
         </div>
         <p>Answers are saved in this browser as you type.</p>
+        <p id="review-banner" class="review-banner" hidden></p>
       </header>
       <form id="review-form" autocomplete="off"></form>
+      <div class="actions" id="incident-actions" hidden>
+        <button type="button" class="button button-secondary" id="add-incident">Add incident</button>
+        <button type="button" class="button button-secondary" id="remove-incident">Remove incident</button>
+      </div>
       <div class="actions">
         <button type="submit" class="button button-primary" id="submit-button" form="review-form">Submit</button>
         <button type="button" class="button button-secondary" id="clear-button">Clear</button>
@@ -33,6 +38,7 @@
           <h2>Reference PDF</h2>
           <p>Drop a PDF here, or choose a file.</p>
           <p class="pdf-hint">The file stays in this browser. Nothing is uploaded.</p>
+          <p class="pdf-hint">Subjects should open the review link they were sent.</p>
           <button type="button" class="button button-primary" id="pdf-choose">Choose PDF</button>
         </div>
         <div class="pdf-viewer" id="pdf-viewer" hidden>
@@ -45,6 +51,7 @@
           </div>
           <iframe id="pdf-frame" title="Reference PDF"></iframe>
         </div>
+        <div id="review-view" hidden></div>
       </div>
       <div class="pdf-overlay" id="pdf-overlay" hidden>
         <p>Drop PDF here</p>
