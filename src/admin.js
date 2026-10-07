@@ -1,4 +1,5 @@
 import { driveConfigured, postToDrive } from "./drive.js";
+import { formatProcedureLine } from "./procedure-times.js";
 import { mountPrep } from "./prep.js";
 
 const PASSWORD_KEY = "peerapp-admin-password";
@@ -133,6 +134,13 @@ function renderDetail(submission) {
         const text = field.value == null ? "" : String(field.value).trim();
         value.textContent = text || "(blank)";
         row.append(label, value);
+        const procedureLine = formatProcedureLine(field.procedureTimes);
+        if (procedureLine) {
+          const times = document.createElement("p");
+          times.className = "procedure-times";
+          times.textContent = procedureLine;
+          row.append(times);
+        }
         fields.append(row);
       }
       block.append(fields);

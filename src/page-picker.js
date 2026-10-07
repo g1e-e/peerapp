@@ -1,7 +1,8 @@
 import { createReferenceView } from "./reference-view.js";
 import { MAX_PAGES_PER_QUESTION } from "./page-range.js";
 
-const SIZES = { small: 88, medium: 128, large: 188 };
+const SIZE_COLUMNS = { small: 4, medium: 3, large: 2, xlarge: 1 };
+const SIZE_LABELS = { small: "Small", medium: "Medium", large: "Large", xlarge: "Extra large" };
 
 export function createPagePicker(container) {
   container.classList.add("page-picker");
@@ -27,30 +28,40 @@ export function createPagePicker(container) {
   const sizes = document.createElement("div");
   sizes.className = "page-size";
   const sizeButtons = {};
-  for (const name of ["small", "medium", "large"]) {
+  for (const name of Object.keys(SIZE_COLUMNS)) {
     const button = document.createElement("button");
     button.type = "button";
     button.className = "button button-secondary";
-    button.textContent = name[0].toUpperCase() + name.slice(1);
+    button.textContent = SIZE_LABELS[name];
     button.addEventListener("click", () => setSize(name));
     sizeButtons[name] = button;
     sizes.append(button);
   }
 
-  toolbar.append(selectedOnly, clear, sizes);
+  const contentsButton = document.createElement("button");
+  contentsButton.type = "button";
+  contentsButton.className = "button button-secondary";
+  contentsButton.textContent = "Contents";
+
+  toolbar.append(selectedOnly, clear, contentsButton, sizes);
 
   const message = document.createElement("p");
   message.className = "prep-page-count is-error";
   message.hidden = true;
 
+  const tocDrawer = document.createElement("div");
+  tocDrawer.className = "toc-drawer";
+  tocDrawer.hidden = true;
+
   const grid = document.createElement("div");
   grid.className = "page-grid";
 
   const selectedHost = document.createElement("div");
+  selectedHost.className = "page-selected-host";
   selectedHost.hidden = true;
   const selectedView = createReferenceView(selectedHost);
 
-  container.append(title, toolbar, message, grid, selectedHost);
+  container.append(title, toolbar, message, tocDrawer, grid, selectedHost);
 
   const overlay = document.createElement("div");
   overlay.className = "page-overlay";
@@ -75,12 +86,19 @@ export function createPagePicker(container) {
   overlayClose.type = "button";
   overlayClose.className = "button button-secondary";
   overlayClose.textContent = "Close";
-  overlayBar.append(overlayPrev, overlayLabel, overlayNext, overlayToggle, overlayClose);
+  const overlayContents = document.createElement("button");
+  overlayContents.type = "button";
+  overlayContents.className = "button button-secondary";
+  overlayContents.textContent = "Contents";
+  const overlayToc = document.createElement("div");
+  overlayToc.className = "toc-drawer toc-drawer-overlay";
+  overlayToc.hidden = true;
+  overlayBar.append(overlayPrev, overlayLabel, overlayNext, overlayToggle, overlayContents, overlayClose);
   const overlayStage = document.createElement("div");
   overlayStage.className = "page-overlay-stage";
   const overlayCanvas = document.createElement("canvas");
   overlayStage.append(overlayCanvas);
-  overlay.append(overlayBar, overlayStage);
+  overlay.append(overlayBar, overlayToc, overlayStage);
   document.body.append(overlay);
 
   const cache = new Map();
@@ -95,6 +113,7 @@ export function createPagePicker(container) {
   let showingSelected = false;
   let overlayPage = 1;
   let renderGeneration = 0;
+  let toc = [];
 
   const observer = new IntersectionObserver((entries) => {
     for (const entry of entries) {
@@ -103,8 +122,8 @@ export function createPagePicker(container) {
     }
   }, { root: grid, rootMargin: "240px" });
 
-  function cssWidth() {
-    return SIZES[size];
+  function cssWidth(cell) {
+    return Math.max(72, (cell ? cell.clientWidth : 160) - 10);
   }
 
   function showLimit() {
@@ -221,7 +240,7 @@ export function createPagePicker(container) {
 
   async function paintThumb(cell) {
     const page = Number(cell.dataset.page);
-    const width = cssWidth();
+    const width = cssWidth(cell);
     const key = `${page}@${width}`;
     const generation = renderGeneration;
     let source = cache.get(key);
@@ -268,7 +287,7 @@ export function createPagePicker(container) {
 
   function setSize(name) {
     size = name;
-    container.classList.remove("is-small", "is-medium", "is-large");
+    container.classList.remove("is-small", "is-medium", "is-large", "is-xlarge");
     container.classList.add(`is-${name}`);
     for (const [key, button] of Object.entries(sizeButtons)) {
       button.classList.toggle("is-selected", key === name);
@@ -277,13 +296,136 @@ export function createPagePicker(container) {
     buildGrid();
   }
 
+  function selectedHeading() {
+    const name = activeTitle.replace(/^Selecting pages for:\s*/, "") || "Selected pages";
+    const count = selected.length;
+    return `${name} · ${count} page${count === 1 ? "" : "s"}`;
+  }
+
   function showSelectedView() {
     if (!selected.length) {
       selectedView.showMessage("No pages");
       return;
     }
-    selectedView.showPages(selected);
+    selectedView.showPages(selected, selectedHeading());
   }
+
+  function scrollToPage(page) {
+    if (showingSelected) {
+      showingSelected = false;
+      selectedOnly.textContent = "Show selected only";
+      grid.hidden = false;
+      selectedHost.hidden = true;
+    }
+    const cell = grid.querySelector(`[data-page="${page}"]`);
+    if (!cell) return;
+    cell.scrollIntoView({ block: "center", behavior: "smooth" });
+    cell.classList.add("is-flash");
+    window.setTimeout(() => cell.classList.remove("is-flash"), 1200);
+  }
+
+  function renderToc(host, onPick) {
+    host.replaceChildren();
+    if (!toc.length) {
+      const empty = document.createElement("p");
+      empty.className = "toc-empty";
+      empty.textContent = "This PDF has no table of contents.";
+      host.append(empty);
+      return;
+    }
+    host.append(tocTree(toc, onPick, 0));
+  }
+
+  function tocTree(items, onPick, depth) {
+    const list = document.createElement("ul");
+    list.className = "toc-list";
+    for (const item of items) {
+      const entry = document.createElement("li");
+      const row = document.createElement("button");
+      row.type = "button";
+      row.className = "toc-entry";
+      row.style.paddingLeft = `${0.45 + depth * 0.85}rem`;
+      const name = document.createElement("span");
+      name.textContent = item.title;
+      const page = document.createElement("span");
+      page.className = "toc-page";
+      page.textContent = item.pageNumber ? String(item.pageNumber) : "";
+      row.append(name, page);
+      if (item.pageNumber) row.addEventListener("click", () => onPick(item.pageNumber));
+      const header = document.createElement("div");
+      header.className = "toc-row";
+      if (item.items && item.items.length) {
+        const nested = tocTree(item.items, onPick, depth + 1);
+        nested.hidden = depth >= 1;
+        const twist = document.createElement("button");
+        twist.type = "button";
+        twist.className = "toc-twist";
+        twist.textContent = nested.hidden ? "▸" : "▾";
+        twist.addEventListener("click", () => {
+          nested.hidden = !nested.hidden;
+          twist.textContent = nested.hidden ? "▸" : "▾";
+        });
+        header.append(twist, row);
+        entry.append(header, nested);
+      } else {
+        entry.append(row);
+      }
+      list.append(entry);
+    }
+    return list;
+  }
+
+  async function walkOutline(doc, items) {
+    const entries = [];
+    for (const item of items || []) {
+      let pageNumber = 0;
+      try {
+        let dest = item.dest;
+        if (typeof dest === "string") dest = await doc.getDestination(dest);
+        if (Array.isArray(dest) && dest[0]) {
+          pageNumber = (await doc.getPageIndex(dest[0])) + 1;
+        }
+      } catch {
+        pageNumber = 0;
+      }
+      entries.push({
+        title: item.title || "Untitled",
+        pageNumber,
+        items: await walkOutline(doc, item.items),
+      });
+    }
+    return entries;
+  }
+
+  async function loadOutline(doc) {
+    toc = [];
+    if (!doc) {
+      renderToc(tocDrawer, scrollToPage);
+      renderToc(overlayToc, (page) => {
+        overlayPage = page;
+        drawOverlay();
+      });
+      return;
+    }
+    try {
+      const outline = await doc.getOutline();
+      toc = outline && outline.length ? await walkOutline(doc, outline) : [];
+    } catch {
+      toc = [];
+    }
+    renderToc(tocDrawer, scrollToPage);
+    renderToc(overlayToc, (page) => {
+      overlayPage = page;
+      drawOverlay();
+    });
+  }
+
+  contentsButton.addEventListener("click", () => {
+    tocDrawer.hidden = !tocDrawer.hidden;
+  });
+  overlayContents.addEventListener("click", () => {
+    overlayToc.hidden = !overlayToc.hidden;
+  });
 
   function openOverlay(page) {
     if (!pdf) return;
@@ -371,7 +513,7 @@ export function createPagePicker(container) {
     }
   });
 
-  setSize("medium");
+  setSize("large");
 
   return {
     setPdf(doc) {
@@ -380,6 +522,7 @@ export function createPagePicker(container) {
       cache.clear();
       selectedView.setPdf(doc);
       buildGrid();
+      loadOutline(doc);
     },
     setActive(nextTitle, pages, nextUsage) {
       activeTitle = nextTitle || "";

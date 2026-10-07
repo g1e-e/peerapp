@@ -17,7 +17,7 @@ export const segments = [
         id: "status",
         label: "Status",
         type: "select",
-        options: ["Open", "In Progress", "Completed"],
+        options: ["Open", "Closed"],
       },
       {
         id: "reviewer",

@@ -2,30 +2,12 @@ export function createReferenceView(container) {
   container.classList.add("reference-view");
   container.replaceChildren();
 
-  const toolbar = document.createElement("div");
-  toolbar.className = "reference-toolbar";
-
-  const prev = document.createElement("button");
-  prev.type = "button";
-  prev.className = "button button-secondary";
-  prev.textContent = "Prev";
-
-  const label = document.createElement("p");
-  label.className = "reference-label";
-
-  const next = document.createElement("button");
-  next.type = "button";
-  next.className = "button button-secondary";
-  next.textContent = "Next";
-
-  toolbar.append(prev, label, next);
+  const sticky = document.createElement("p");
+  sticky.className = "reference-sticky";
+  sticky.hidden = true;
 
   const stage = document.createElement("div");
   stage.className = "reference-stage";
-  stage.tabIndex = 0;
-
-  const canvas = document.createElement("canvas");
-  canvas.hidden = true;
 
   const note = document.createElement("p");
   note.className = "reference-note";
@@ -39,171 +21,139 @@ export function createReferenceView(container) {
   bar.value = 0;
   progress.append(progressLabel, bar);
 
-  stage.append(canvas, note, progress);
-  container.append(toolbar, stage);
+  stage.append(note, progress);
+  container.append(sticky, stage);
 
   const cache = new Map();
   let pdf = null;
   let pages = [];
-  let index = 0;
-  let renderToken = 0;
-  let currentTask = null;
+  let generation = 0;
 
-  function cssWidth() {
-    return Math.max(280, stage.clientWidth - 24);
-  }
+  const observer = new IntersectionObserver((entries) => {
+    for (const entry of entries) {
+      if (!entry.isIntersecting) continue;
+      paintPage(entry.target);
+    }
+  }, { root: stage, rootMargin: "600px" });
 
   function showNote(text) {
-    canvas.hidden = true;
+    sticky.hidden = true;
+    progress.hidden = true;
+    clearPages();
     note.hidden = !text;
     note.textContent = text || "";
-    prev.disabled = true;
-    next.disabled = true;
-    label.textContent = "";
   }
 
-  function updateChrome() {
-    const total = pages.length;
-    prev.disabled = index <= 0;
-    next.disabled = index >= total - 1;
-    const pdfPage = pages[index];
-    label.textContent = total
-      ? `Page ${index + 1} of ${total} (PDF page ${pdfPage})`
-      : "";
+  function clearPages() {
+    observer.disconnect();
+    for (const block of stage.querySelectorAll(".reference-page")) block.remove();
   }
 
-  async function draw() {
-    if (!pdf || pages.length === 0) return;
-    const token = ++renderToken;
-    if (currentTask) {
-      currentTask.cancel();
-      currentTask = null;
-    }
+  function panelWidth() {
+    return Math.max(280, stage.clientWidth - 28);
+  }
 
-    const pageNumber = pages[index];
-    const width = cssWidth();
-    const pixelRatio = window.devicePixelRatio || 1;
-    const key = `${pageNumber}@${width}@${pixelRatio}`;
-    const cached = cache.get(key);
-
+  function buildStack() {
+    clearPages();
     note.hidden = true;
-    canvas.hidden = false;
-    updateChrome();
-
-    if (cached) {
-      canvas.width = cached.width;
-      canvas.height = cached.height;
-      canvas.style.width = cached.styleWidth;
-      canvas.style.height = cached.styleHeight;
-      canvas.getContext("2d").drawImage(cached.canvas, 0, 0);
-      return;
+    const width = panelWidth();
+    for (const pageNumber of pages) {
+      const block = document.createElement("section");
+      block.className = "reference-page";
+      block.dataset.page = String(pageNumber);
+      block.dataset.width = String(width);
+      const label = document.createElement("p");
+      label.className = "reference-page-label";
+      label.textContent = `PDF page ${pageNumber}`;
+      const slot = document.createElement("div");
+      slot.className = "reference-page-slot";
+      block.append(label, slot);
+      stage.append(block);
+      observer.observe(block);
     }
+  }
 
-    let page;
-    try {
-      page = await pdf.getPage(pageNumber);
-    } catch {
-      if (token !== renderToken) return;
-      showNote("Could not open this page.");
-      return;
+  async function paintPage(block) {
+    if (!pdf) return;
+    const pageNumber = Number(block.dataset.page);
+    const width = Number(block.dataset.width) || panelWidth();
+    const ratio = Math.min(window.devicePixelRatio || 1, 2);
+    const key = `${pageNumber}@${width}@${ratio}`;
+    const token = generation;
+    let rendered = cache.get(key);
+    if (!rendered) {
+      try {
+        rendered = await drawPage(pageNumber, width, ratio);
+      } catch {
+        return;
+      }
+      if (token !== generation) return;
+      cache.set(key, rendered);
     }
-    if (token !== renderToken) return;
+    if (token !== generation || !block.isConnected) return;
+    const slot = block.querySelector(".reference-page-slot");
+    if (!slot) return;
+    const canvas = document.createElement("canvas");
+    canvas.width = rendered.width;
+    canvas.height = rendered.height;
+    canvas.style.width = rendered.styleWidth;
+    canvas.style.height = rendered.styleHeight;
+    canvas.getContext("2d").drawImage(rendered.canvas, 0, 0);
+    slot.replaceChildren(canvas);
+    observer.unobserve(block);
+  }
 
+  async function drawPage(pageNumber, width, ratio) {
+    const page = await pdf.getPage(pageNumber);
     const base = page.getViewport({ scale: 1 });
     const viewport = page.getViewport({ scale: width / base.width });
-    const backing = document.createElement("canvas");
-    backing.width = Math.floor(viewport.width * pixelRatio);
-    backing.height = Math.floor(viewport.height * pixelRatio);
-    backing.style.width = `${Math.floor(viewport.width)}px`;
-    backing.style.height = `${Math.floor(viewport.height)}px`;
-
-    const task = page.render({
-      canvasContext: backing.getContext("2d"),
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.max(1, Math.floor(viewport.width * ratio));
+    canvas.height = Math.max(1, Math.floor(viewport.height * ratio));
+    const styleWidth = `${Math.floor(viewport.width)}px`;
+    const styleHeight = `${Math.floor(viewport.height)}px`;
+    await page.render({
+      canvasContext: canvas.getContext("2d"),
       viewport,
-      transform: pixelRatio === 1 ? null : [pixelRatio, 0, 0, pixelRatio, 0, 0],
-    });
-    currentTask = task;
-    try {
-      await task.promise;
-    } catch (err) {
-      if (token !== renderToken) return;
-      showNote("Could not draw this page.");
-      return;
-    }
-    if (token !== renderToken) return;
-    currentTask = null;
-
-    cache.set(key, {
-      canvas: backing,
-      width: backing.width,
-      height: backing.height,
-      styleWidth: backing.style.width,
-      styleHeight: backing.style.height,
-    });
-
-    canvas.width = backing.width;
-    canvas.height = backing.height;
-    canvas.style.width = backing.style.width;
-    canvas.style.height = backing.style.height;
-    canvas.getContext("2d").drawImage(backing, 0, 0);
+      transform: ratio === 1 ? null : [ratio, 0, 0, ratio, 0, 0],
+    }).promise;
+    return { canvas, width: canvas.width, height: canvas.height, styleWidth, styleHeight };
   }
 
-  function step(delta) {
-    if (pages.length === 0) return;
-    const nextIndex = index + delta;
-    if (nextIndex < 0 || nextIndex >= pages.length) return;
-    index = nextIndex;
-    draw();
-  }
-
-  prev.addEventListener("click", () => step(-1));
-  next.addEventListener("click", () => step(1));
-  container.addEventListener("click", (event) => {
-    if (event.target.closest("button")) return;
-    stage.focus();
+  let resizeWidth = 0;
+  const resizeObserver = new ResizeObserver(() => {
+    const width = panelWidth();
+    if (!pages.length || Math.abs(width - resizeWidth) < 8) return;
+    resizeWidth = width;
+    generation += 1;
+    buildStack();
   });
-  container.addEventListener("keydown", (event) => {
-    const tag = event.target.tagName;
-    if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
-    if (event.key === "ArrowLeft") {
-      event.preventDefault();
-      step(-1);
-    } else if (event.key === "ArrowRight") {
-      event.preventDefault();
-      step(1);
-    }
-  });
-
-  const observer = new ResizeObserver(() => {
-    if (pages.length > 0) draw();
-  });
-  observer.observe(stage);
+  resizeObserver.observe(stage);
 
   return {
     setPdf(doc) {
       pdf = doc;
       cache.clear();
+      generation += 1;
+      if (pages.length) buildStack();
     },
     showProgress(text, ratio) {
-      toolbar.hidden = true;
-      canvas.hidden = true;
+      sticky.hidden = true;
+      clearPages();
       note.hidden = true;
       progress.hidden = false;
       progressLabel.textContent = text;
-      bar.value = Math.round(ratio * 100);
+      bar.value = Math.round((ratio || 0) * 100);
     },
     showMessage(text) {
-      progress.hidden = true;
-      toolbar.hidden = false;
       pages = [];
-      index = 0;
+      generation += 1;
       showNote(text);
     },
-    showPages(pageNumbers) {
+    showPages(pageNumbers, heading) {
+      pages = pageNumbers || [];
+      generation += 1;
       progress.hidden = true;
-      toolbar.hidden = false;
-      pages = pageNumbers;
-      index = 0;
       if (!pdf) {
         showNote("The PDF is not loaded yet.");
         return;
@@ -212,10 +162,11 @@ export function createReferenceView(container) {
         showNote("No reference pages for this question.");
         return;
       }
-      draw();
-    },
-    focus() {
-      stage.focus();
+      sticky.hidden = !heading;
+      sticky.textContent = heading || "";
+      resizeWidth = panelWidth();
+      buildStack();
+      stage.scrollTop = 0;
     },
   };
 }

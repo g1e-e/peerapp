@@ -67,7 +67,7 @@ Submissions are saved by a Google Apps Script web app in your Google account. Th
 
 The script keeps a `peerapp index.json` file in `peerapp submissions` so the admin page can list reviews and submissions without opening every file. Each review PDF is stored as separate chunk files in its own folder under `peerapp reviews`. Drive files stay private to your account.
 
-`Code.gs` in this repo has changed since the copy that is deployed. Paste the new file over the script, then redeploy with **Deploy > Manage deployments > edit (pencil) > New version**. That keeps the same `/exec` URL already in `src/config.js`. Leave `ADMIN_PASSWORD` as it is. Reviews saved before this change need to be created again; opening one shows "This review needs to be re-saved".
+`Code.gs` changed again so a review can store procedure start and end times. Paste the new file over the script, then redeploy with **Deploy > Manage deployments > edit (pencil) > New version**. That keeps the same `/exec` URL already in `src/config.js`. Leave `ADMIN_PASSWORD` as it is. Reviews saved before the chunked-PDF change need to be created again; opening one shows "This review needs to be re-saved".
 
 Until `APPS_SCRIPT_URL` is filled in, Submit still shows the on-page summary and says Drive is not set up, and the admin page says it is not configured.
 
@@ -77,7 +77,7 @@ Until `APPS_SCRIPT_URL` is filled in, Submit still shows the on-page summary and
 2. Choose **New review** and give it a name.
 3. Set **Number of incidents** (0 to 10). The page shows that many Peer Review - Incident sections. Lowering the number drops page assignments for the incidents you remove, and asks first if any were set.
 4. Drop in the reference PDF, or choose a file. It can be large, but it must be under about 45 MB. The file uploads in pieces.
-5. Click a question, then click page thumbnails to choose its pages. Shift-click selects a range. A question can have up to 50 pages. Magnify a thumbnail to read it before choosing. **Show selected only** steps through that question's pages.
+5. The editor matches the subject screen: questions on the left, pages on the right. Click a question, then click thumbnails. Shift-click selects a range. **Contents** jumps using the PDF bookmarks when the file has them. **Show selected only** shows the same scrolling pages the subject will see. Chart Review question 3 tries to read procedure start and end times from the selected pages; you can type over them.
 6. Choose **Save review**. Copy the subject link. It looks like `https://g1e-e.github.io/peerapp/?review=` followed by a long id. That id is the only key the subject needs.
 7. **Open** edits a review later. **Submissions** lists the answers, and **Show** can limit the list to one review.
 

@@ -605,12 +605,140 @@ body.admin-body {
   text-align: center;
 }
 
+.reference-sticky {
+  margin: 0;
+  padding: 0.45rem 0.75rem;
+  background: #f8fbfc;
+  border-bottom: 1px solid var(--line);
+  color: var(--ink);
+  font-size: 0.92rem;
+  font-weight: 600;
+}
+
 .reference-stage {
   flex: 1;
-  min-height: 12rem;
+  min-height: 0;
   overflow: auto;
   background: #4d5966;
-  outline: none;
+}
+
+.reference-page {
+  padding: 0.75rem 0.85rem 0;
+}
+
+.reference-page-label {
+  margin: 0 0 0.35rem;
+  color: #fff;
+  font-size: 0.82rem;
+}
+
+.reference-page-slot canvas {
+  display: block;
+  width: 100%;
+  height: auto;
+  background: #fff;
+}
+
+.page-selected-host {
+  flex: 1;
+  min-height: 0;
+}
+
+.page-selected-host .reference-view {
+  height: 100%;
+}
+
+.toc-drawer {
+  max-height: 38%;
+  overflow: auto;
+  margin-bottom: 0.5rem;
+  padding: 0.35rem 0.2rem;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #fff;
+}
+
+.toc-drawer-overlay {
+  max-height: 30vh;
+  background: #fff;
+}
+
+.toc-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.toc-entry {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.6rem;
+  width: 100%;
+  border: 0;
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  text-align: left;
+  padding: 0.28rem 0.45rem;
+  cursor: pointer;
+}
+
+.toc-row {
+  display: flex;
+  align-items: stretch;
+}
+
+.toc-twist {
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  width: 1.4rem;
+}
+
+.toc-entry:hover {
+  background: var(--accent-soft);
+}
+
+.toc-page {
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+
+.toc-empty {
+  margin: 0.3rem 0.5rem;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.prep-times {
+  display: grid;
+  gap: 0.35rem;
+}
+
+.prep-times-note {
+  margin: 0;
+  white-space: pre-line;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.prep-times-inputs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  align-items: center;
+}
+
+.prep-times-inputs input {
+  width: auto;
+}
+
+.procedure-times {
+  margin: 0.2rem 0 0;
+  color: var(--accent-dark);
+  font-size: 0.92rem;
+  font-weight: 600;
 }
 
 .reference-stage canvas {
@@ -672,8 +800,62 @@ body.admin-body {
   margin-top: 0.55rem;
 }
 
-.prep-editor-wrap {
-  margin-top: 1rem;
+.prep-editor-wrap:not([hidden]) {
+  position: fixed;
+  inset: 0;
+  z-index: 8;
+  margin: 0;
+  background: var(--bg);
+}
+
+.prep-workspace {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  height: 100vh;
+  height: 100dvh;
+}
+
+.prep-left,
+.prep-right {
+  min-width: 0;
+  min-height: 0;
+}
+
+.prep-left {
+  overflow: auto;
+  padding: 0.85rem 1rem 1.5rem;
+}
+
+.prep-right {
+  display: flex;
+  overflow: hidden;
+  background: var(--pdf);
+  border-left: 1px solid var(--line);
+}
+
+.prep-right .page-picker {
+  flex: 1;
+  height: 100%;
+  min-height: 0;
+  padding: 0.65rem 0.75rem 0.75rem;
+}
+
+.prep-head {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) 8rem;
+  gap: 0.45rem 0.7rem;
+  align-items: end;
+  margin-bottom: 0.6rem;
+}
+
+.prep-head .prep-drop {
+  grid-column: 1 / -1;
+  margin: 0;
+  padding: 0.55rem 0.7rem;
+}
+
+.prep-head .field {
+  margin: 0;
 }
 
 .prep-count-field {
@@ -759,16 +941,30 @@ body.admin-body {
   .prep-columns {
     grid-template-columns: 1fr;
   }
+
+  .prep-workspace {
+    grid-template-columns: 1fr;
+    grid-template-rows: minmax(0, 1.7fr) minmax(0, 1fr);
+  }
+
+  .prep-right {
+    border-left: 0;
+    border-top: 1px solid var(--line);
+  }
 }
 
 .page-picker {
-  --thumb: 128px;
+  --cols: 2;
   min-width: 0;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
 }
 
-.page-picker.is-small { --thumb: 88px; }
-.page-picker.is-medium { --thumb: 128px; }
-.page-picker.is-large { --thumb: 188px; }
+.page-picker.is-small { --cols: 4; }
+.page-picker.is-medium { --cols: 3; }
+.page-picker.is-large { --cols: 2; }
+.page-picker.is-xlarge { --cols: 1; }
 
 .page-picker-title {
   margin: 0 0 0.6rem;
@@ -796,11 +992,13 @@ body.admin-body {
 
 .page-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(var(--thumb), 1fr));
-  gap: 0.55rem;
-  max-height: 70vh;
+  grid-template-columns: repeat(var(--cols), minmax(0, 1fr));
+  gap: 0.65rem;
+  flex: 1;
+  min-height: 0;
   overflow: auto;
   padding: 0.2rem;
+  align-content: start;
 }
 
 .thumb {
@@ -820,6 +1018,10 @@ body.admin-body {
 .thumb.is-selected {
   border-color: var(--accent);
   background: var(--accent-soft);
+}
+
+.thumb.is-flash {
+  box-shadow: 0 0 0 3px #d4a017;
 }
 
 .thumb-slot {
