@@ -1,5 +1,3 @@
-// Ara prepares a review: name, PDF, how many incidents, and pages chosen from thumbnails.
-
 import { REVIEW_LINK_PREFIX } from "./config.js";
 import { isPdfFile, MAX_PDF_BYTES } from "./bytes.js";
 import { postToDrive } from "./drive.js";

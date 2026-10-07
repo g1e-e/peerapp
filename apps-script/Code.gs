@@ -1,19 +1,3 @@
-// Peer review web app.
-//
-// Deploy: Execute as Me, Who has access: Anyone.
-// Project Settings > Script properties: add ADMIN_PASSWORD.
-// Do not put the password in this file.
-//
-// The browser posts JSON with Content-Type text/plain so there is no
-// CORS preflight. Drive files stay in this account.
-//
-// Folders:
-//   peerapp submissions — answer files, plus peerapp index.json
-//   peerapp reviews     — one JSON file per review, and a subfolder of PDF chunks per upload
-//
-// A review stores pdfChunks (file ids in order) and pdfSize. The script
-// does not stitch those chunks into one PDF.
-
 var FOLDER_NAME = "peerapp submissions";
 var REVIEWS_FOLDER_NAME = "peerapp reviews";
 var FOLDER_ID_KEY = "SUBMISSIONS_FOLDER_ID";
@@ -167,7 +151,6 @@ function handleDelete(body) {
     try {
       DriveApp.getFileById(body.id).setTrashed(true);
     } catch (err) {
-      // Already gone. Still drop it from the index.
     }
     var kept = [];
     for (var i = 0; i < index.submissions.length; i++) {
@@ -384,7 +367,6 @@ function loadReview(id) {
     try {
       return JSON.parse(hit);
     } catch (err) {
-      // Cache entry was cut off. Read Drive below.
     }
   }
 
@@ -567,7 +549,6 @@ function getIndexFile() {
     var file = DriveApp.getFileById(id);
     if (!file.isTrashed()) return file;
   } catch (err) {
-    // Rebuild below.
   }
   return null;
 }
@@ -584,7 +565,6 @@ function rebuildIndex() {
       if (!review.reviewFileId) review.reviewFileId = file.getId();
       reviews.push(internalReviewSummary(review, 0));
     } catch (err) {
-      // Skip a file that is not a review.
     }
   }
 
@@ -595,7 +575,6 @@ function rebuildIndex() {
       if (!data || !data.answers) return;
       submissions.push(submissionSummary(file.getId(), data));
     } catch (err) {
-      // Skip.
     }
   });
   for (var i = 0; i < reviews.length; i++) {
@@ -730,12 +709,9 @@ function trashFolder(id) {
   try {
     DriveApp.getFolderById(id).setTrashed(true);
   } catch (err) {
-    // Already gone.
   }
 }
 
-// A correct password only reads Script Properties.
-// The script lock is taken only while recording a wrong password.
 function authorize(password) {
   var props = PropertiesService.getScriptProperties();
   var now = Date.now();
@@ -802,7 +778,6 @@ function getNamedFolder(name, propKey) {
       var cached = DriveApp.getFolderById(cachedId);
       if (!cached.isTrashed()) return cached;
     } catch (err) {
-      // The saved folder is gone. Find or create it below.
     }
   }
 
@@ -823,7 +798,6 @@ function trashFileById(id) {
   try {
     DriveApp.getFileById(id).setTrashed(true);
   } catch (err) {
-    // Already gone.
   }
 }
 

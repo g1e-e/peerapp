@@ -1,6 +1,3 @@
-// Turns "3-7, 12, 40-45" into a list of page numbers.
-// Pages are the PDF's own page numbers, starting at 1.
-
 export const MAX_PAGES_PER_QUESTION = 50;
 
 export function parsePageRange(text, pageCount) {

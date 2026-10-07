@@ -1,6 +1,3 @@
-// Click thumbnails to choose the PDF pages for one question.
-// Thumbnails render when they scroll into view, and stay cached.
-
 import { createReferenceView } from "./reference-view.js";
 import { MAX_PAGES_PER_QUESTION } from "./page-range.js";
 

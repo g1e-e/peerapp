@@ -1,6 +1,3 @@
-// Draws the form from src/questions.js, saves answers in this browser,
-// and shows a summary when the reviewer clicks Submit.
-
 import { driveConfigured, postToDrive } from "./drive.js";
 import { openPdf } from "./pdfjs.js";
 import { buildSegments, clampIncidentCount, MAX_INCIDENTS } from "./questions.js";
@@ -28,7 +25,6 @@ const reviewBanner = document.querySelector("#review-banner");
 const reviewViewRoot = document.querySelector("#review-view");
 const referenceView = createReferenceView(reviewViewRoot);
 
-// question id -> the input, textarea, select, or rating group
 const controls = new Map();
 
 function storageKey() {
@@ -551,9 +547,6 @@ if (reviewId) {
   updateIncidentButtons();
 }
 
-// Reference PDF. The file is shown with the browser's own viewer.
-// It stays in this tab only: nothing is uploaded, and a reload clears it.
-
 const pdfPanel = document.querySelector("#pdf-panel");
 const pdfEmpty = document.querySelector("#pdf-empty");
 const pdfViewer = document.querySelector("#pdf-viewer");
@@ -627,7 +620,6 @@ function endFileDrag() {
   pdfOverlay.hidden = true;
 }
 
-// Keep a dropped file from opening as a new page, anywhere on this page.
 window.addEventListener("dragover", (event) => {
   event.preventDefault();
 }, true);
@@ -639,7 +631,6 @@ window.addEventListener("drop", (event) => {
 
 window.addEventListener("dragenter", (event) => {
   if (!draggingFiles(event)) return;
-  // Cover the viewer so the drop lands on this page, not inside the PDF frame.
   pdfOverlay.hidden = false;
 });
 
@@ -662,7 +653,6 @@ pdfPanel.addEventListener("dragover", (event) => {
 });
 
 pdfPanel.addEventListener("dragleave", (event) => {
-  // Moving between pieces of the panel still counts as inside it.
   if (pdfPanel.contains(event.relatedTarget)) return;
   pdfPanel.classList.remove("is-dragover");
 });

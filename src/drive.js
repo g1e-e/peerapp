@@ -1,6 +1,3 @@
-// Talks to the Apps Script web app. The body is text/plain so the
-// browser does not send a CORS preflight.
-
 import { APPS_SCRIPT_URL } from "./config.js";
 
 export function driveConfigured() {
