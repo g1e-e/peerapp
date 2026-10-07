@@ -7,7 +7,7 @@ GlobalWorkerOptions.workerSrc = `${PDFJS_ROOT}/build/pdf.worker.min.mjs`;
 
 export async function openPdf(data) {
   const task = getDocument({
-    data,
+    data: data instanceof Uint8Array ? data.slice() : data,
     wasmUrl: `${PDFJS_ROOT}/wasm/`,
     cMapUrl: `${PDFJS_ROOT}/cmaps/`,
     cMapPacked: true,
