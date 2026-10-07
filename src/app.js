@@ -526,7 +526,7 @@ async function enterReview() {
 
   try {
     referenceView.showProgress("Loading reference PDF…", 0);
-    const bytes = await downloadReviewPdf(reviewId, (done, total) => {
+    const bytes = await downloadReviewPdf(reviewId, review.pdfChunkCount, (done, total) => {
       referenceView.showProgress(`Loading reference PDF… part ${done} of ${total}`, done / total);
     });
     referenceView.setPdf(await openPdf(bytes));

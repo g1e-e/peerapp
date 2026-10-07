@@ -5,28 +5,30 @@
 // Do not put the password in this file.
 //
 // The browser posts JSON with Content-Type text/plain so there is no
-// CORS preflight. Drive files stay in this account. Callers only receive
-// what these actions return.
+// CORS preflight. Drive files stay in this account.
 //
-// Folders created on first use:
-//   peerapp submissions  — answer files (a subfolder per review id)
-//   peerapp reviews      — review config JSON and the reference PDFs
-//   peerapp tmp          — upload pieces, deleted when the PDF is assembled
+// Folders:
+//   peerapp submissions — answer files, plus peerapp index.json
+//   peerapp reviews     — one JSON file per review, and a subfolder of PDF chunks per upload
+//
+// A review stores pdfChunks (file ids in order) and pdfSize. The script
+// does not stitch those chunks into one PDF.
 
 var FOLDER_NAME = "peerapp submissions";
 var REVIEWS_FOLDER_NAME = "peerapp reviews";
-var TMP_FOLDER_NAME = "peerapp tmp";
 var FOLDER_ID_KEY = "SUBMISSIONS_FOLDER_ID";
 var REVIEWS_FOLDER_ID_KEY = "REVIEWS_FOLDER_ID";
-var TMP_FOLDER_ID_KEY = "TMP_FOLDER_ID";
+var INDEX_FILE_ID_KEY = "INDEX_FILE_ID";
 var PASSWORD_KEY = "ADMIN_PASSWORD";
 var FAIL_KEY = "ADMIN_FAILS";
 var LOCK_KEY = "ADMIN_LOCK_UNTIL";
 var MAX_FAILS = 5;
 var WINDOW_MS = 15 * 60 * 1000;
-var CHUNK_BYTES = 5 * 1024 * 1024;
 var MAX_PDF_BYTES = 45 * 1024 * 1024;
 var MAX_PAGES_PER_QUESTION = 50;
+var CACHE_TTL = 300;
+var CACHE_VALUE_LIMIT = 90000;
+var RESAVE = "This review needs to be re-saved";
 
 function doGet() {
   return jsonResponse({ ok: true });
@@ -46,13 +48,13 @@ function doPost(e) {
     if (isAdminAction(body.action)) {
       var auth = authorize(body.password);
       if (!auth.ok) return jsonResponse(auth);
-      if (body.action === "list") return jsonResponse(handleList());
+      if (body.action === "dashboard") return jsonResponse(handleDashboard());
+      if (body.action === "getSubmission") return jsonResponse(handleGetSubmission(body));
       if (body.action === "delete") return jsonResponse(handleDelete(body));
       if (body.action === "uploadStart") return jsonResponse(handleUploadStart(body));
       if (body.action === "uploadChunk") return jsonResponse(handleUploadChunk(body));
       if (body.action === "uploadFinish") return jsonResponse(handleUploadFinish(body));
       if (body.action === "saveReview") return jsonResponse(handleSaveReview(body));
-      if (body.action === "listReviews") return jsonResponse(handleListReviews());
       if (body.action === "deleteReview") return jsonResponse(handleDeleteReview(body));
     }
 
@@ -63,9 +65,9 @@ function doPost(e) {
 }
 
 function isAdminAction(action) {
-  return action === "list" || action === "delete"
+  return action === "dashboard" || action === "getSubmission" || action === "delete"
     || action === "uploadStart" || action === "uploadChunk" || action === "uploadFinish"
-    || action === "saveReview" || action === "listReviews" || action === "deleteReview";
+    || action === "saveReview" || action === "deleteReview";
 }
 
 function jsonResponse(payload) {
@@ -83,6 +85,7 @@ function handleSubmit(body) {
   if (body.reviewId) {
     review = loadReview(body.reviewId);
     if (!review) return { ok: false, error: "Review not found." };
+    if (!hasChunks(review)) return { ok: false, error: RESAVE };
   }
 
   var submittedAt = new Date().toISOString();
@@ -93,109 +96,120 @@ function handleSubmit(body) {
     answers: body.answers,
   };
   var filename = submittedAt + " - MRN " + safeMrn(mrnFromAnswers(body.answers)) + ".json";
-  var folder = review ? reviewSubmissionsFolder(review.id, true) : getFolder();
-  var blob = Utilities.newBlob(JSON.stringify(record, null, 2), MimeType.JSON, filename);
-  var file = folder.createFile(blob);
+  var folder = review ? submissionsFolderFor(review) : getFolder();
+  var file = folder.createFile(Utilities.newBlob(JSON.stringify(record, null, 2), MimeType.JSON, filename));
+  var summary = submissionSummary(file.getId(), record);
+
+  updateIndex(function (index) {
+    index.submissions.unshift(summary);
+    if (summary.reviewId) bumpReviewCount(index, summary.reviewId, 1);
+  });
   return { ok: true, id: file.getId() };
 }
 
 function handleGetReview(body) {
   var review = loadReview(body.reviewId);
   if (!review) return { ok: false, error: "Review not found." };
+  if (!hasChunks(review)) return { ok: false, error: RESAVE };
   return { ok: true, review: publicReview(review) };
 }
 
 function handleGetPdfChunk(body) {
   var review = loadReview(body.reviewId);
   if (!review) return { ok: false, error: "Review not found." };
+  if (!hasChunks(review)) return { ok: false, error: RESAVE };
 
-  var file;
-  try {
-    file = DriveApp.getFileById(review.pdfFileId);
-  } catch (err) {
-    return { ok: false, error: "The reference PDF is missing." };
-  }
-
-  var bytes = file.getBlob().getBytes();
-  var total = Math.max(1, Math.ceil(bytes.length / CHUNK_BYTES));
-  var index = Number(body.index);
-  if (!isFinite(index)) index = 0;
-  index = Math.floor(index);
-  if (index < 0 || index >= total) {
+  var index = Math.floor(Number(body.index));
+  if (!isFinite(index) || index < 0 || index >= review.pdfChunks.length) {
     return { ok: false, error: "That part of the PDF does not exist." };
   }
 
-  var start = index * CHUNK_BYTES;
-  var end = Math.min(bytes.length, start + CHUNK_BYTES);
-  var slice = sliceBytes(bytes, start, end);
+  var file;
+  try {
+    file = DriveApp.getFileById(review.pdfChunks[index]);
+  } catch (err) {
+    return { ok: false, error: "The reference PDF is missing." };
+  }
   return {
     ok: true,
     index: index,
-    total: total,
-    data: Utilities.base64Encode(slice),
+    total: review.pdfChunks.length,
+    data: Utilities.base64Encode(file.getBlob().getBytes()),
   };
 }
 
-function handleList() {
-  var submissions = [];
-  eachSubmissionFile(function (file) {
-    submissions.push(readSubmission(file));
-  });
-  submissions.sort(function (a, b) {
-    return String(b.submittedAt).localeCompare(String(a.submittedAt));
-  });
-  return { ok: true, submissions: submissions };
+function handleDashboard() {
+  var index = readIndex();
+  return {
+    ok: true,
+    reviews: index.reviews.map(publicReviewSummary),
+    submissions: index.submissions,
+  };
+}
+
+function handleGetSubmission(body) {
+  if (!body.id) return { ok: false, error: "Missing file id." };
+  var index = readIndex();
+  if (!indexHasSubmission(index, body.id)) return { ok: false, error: "File not found." };
+  try {
+    var file = DriveApp.getFileById(body.id);
+    return { ok: true, submission: readSubmission(file) };
+  } catch (err) {
+    return { ok: false, error: "File not found." };
+  }
 }
 
 function handleDelete(body) {
   if (!body.id) return { ok: false, error: "Missing file id." };
-
-  var file;
-  try {
-    file = DriveApp.getFileById(body.id);
-  } catch (err) {
-    return { ok: false, error: "File not found." };
-  }
-  if (!fileInSubmissions(file)) return { ok: false, error: "File not found." };
-
-  file.setTrashed(true);
+  var removed = null;
+  updateIndex(function (index) {
+    if (!indexHasSubmission(index, body.id)) return;
+    try {
+      DriveApp.getFileById(body.id).setTrashed(true);
+    } catch (err) {
+      // Already gone. Still drop it from the index.
+    }
+    var kept = [];
+    for (var i = 0; i < index.submissions.length; i++) {
+      if (index.submissions[i].id === body.id) removed = index.submissions[i];
+      else kept.push(index.submissions[i]);
+    }
+    index.submissions = kept;
+    if (removed && removed.reviewId) bumpReviewCount(index, removed.reviewId, -1);
+  });
+  if (!removed) return { ok: false, error: "File not found." };
   return { ok: true };
 }
 
 function handleUploadStart(body) {
   var size = Number(body.size);
-  var chunkCount = Number(body.chunkCount);
+  var chunkCount = Math.floor(Number(body.chunkCount));
   if (!isFinite(size) || size <= 0) return { ok: false, error: "Missing PDF size." };
   if (size > MAX_PDF_BYTES) {
     return { ok: false, error: "This PDF is over 45 MB. Compress it and try again." };
   }
-  chunkCount = Math.floor(chunkCount);
-  if (chunkCount < 1 || chunkCount > 20) {
-    return { ok: false, error: "Could not split that PDF." };
-  }
+  if (chunkCount < 1 || chunkCount > 20) return { ok: false, error: "Could not split that PDF." };
 
-  cleanupOldTempFiles();
   var uploadId = Utilities.getUuid();
-  var meta = {
-    uploadId: uploadId,
-    name: String(body.name || "reference.pdf"),
-    size: size,
-    chunkCount: chunkCount,
-    createdAt: new Date().toISOString(),
-  };
-  writeTempJson(uploadId, meta);
-  return { ok: true, uploadId: uploadId };
+  var folder = getReviewsFolder().createFolder(uploadId);
+  var meta = { size: size, chunkCount: chunkCount, folderId: folder.getId() };
+  CacheService.getScriptCache().put("upload:" + uploadId, JSON.stringify(meta), 21600);
+  return { ok: true, uploadId: uploadId, folderId: folder.getId() };
 }
 
 function handleUploadChunk(body) {
-  var meta = readTempJson(body.uploadId);
-  if (!meta) return { ok: false, error: "That upload has expired. Start again." };
-
-  var index = Number(body.index);
-  if (!isFinite(index) || index < 0 || index >= meta.chunkCount) {
-    return { ok: false, error: "Unexpected PDF piece." };
+  if (!body.folderId || body.data == null || body.data === "") {
+    return { ok: false, error: "Missing PDF piece." };
   }
-  if (!body.data) return { ok: false, error: "Missing PDF piece." };
+  var folder;
+  try {
+    folder = DriveApp.getFolderById(body.folderId);
+  } catch (err) {
+    return { ok: false, error: "Upload folder not found." };
+  }
+  if (!folderParentIs(folder, getReviewsFolder().getId())) {
+    return { ok: false, error: "Upload folder not found." };
+  }
 
   var bytes;
   try {
@@ -203,130 +217,124 @@ function handleUploadChunk(body) {
   } catch (err) {
     return { ok: false, error: "Could not read a PDF piece." };
   }
-
-  var name = partName(body.uploadId, index);
-  var folder = getTmpFolder();
-  trashNamed(folder, name);
-  folder.createFile(Utilities.newBlob(bytes, "application/octet-stream", name));
-  return { ok: true };
+  var file = folder.createFile(Utilities.newBlob(bytes, "application/octet-stream", String(body.index) + ".part"));
+  return { ok: true, fileId: file.getId(), index: Number(body.index), size: bytes.length };
 }
 
 function handleUploadFinish(body) {
-  var meta = readTempJson(body.uploadId);
-  if (!meta) return { ok: false, error: "That upload has expired. Start again." };
+  var raw = CacheService.getScriptCache().get("upload:" + body.uploadId);
+  if (!raw) return { ok: false, error: "That upload has expired. Start again." };
+  var meta = JSON.parse(raw);
+  var ids = body.fileIds;
+  if (!ids || ids.length !== meta.chunkCount) {
+    return { ok: false, error: "Upload is missing a piece. Try again." };
+  }
 
-  var folder = getTmpFolder();
-  var parts = [];
-  var total = 0;
-  for (var index = 0; index < meta.chunkCount; index++) {
-    var files = folder.getFilesByName(partName(body.uploadId, index));
-    if (!files.hasNext()) {
+  var sum = 0;
+  for (var i = 0; i < ids.length; i++) {
+    try {
+      sum += DriveApp.getFileById(ids[i]).getSize();
+    } catch (err) {
       return { ok: false, error: "Upload is missing a piece. Try again." };
     }
-    var bytes = files.next().getBlob().getBytes();
-    parts.push(bytes);
-    total += bytes.length;
   }
-  if (total !== meta.size) {
-    return { ok: false, error: "The PDF arrived incomplete. Try again." };
-  }
-  if (total > MAX_PDF_BYTES) {
-    return { ok: false, error: "This PDF is over 45 MB. Compress it and try again." };
-  }
-
-  var merged = mergeBytes(parts);
-  var pdfName = body.uploadId + ".pdf";
-  var reviews = getReviewsFolder();
-  var pdf = reviews.createFile(Utilities.newBlob(merged, MimeType.PDF, pdfName));
-
-  trashNamed(folder, body.uploadId + ".json");
-  for (var done = 0; done < meta.chunkCount; done++) {
-    trashNamed(folder, partName(body.uploadId, done));
-  }
-  return { ok: true, pdfFileId: pdf.getId() };
+  if (sum !== meta.size) return { ok: false, error: "The PDF arrived incomplete. Try again." };
+  return { ok: true, pdfChunks: ids, pdfSize: sum, folderId: meta.folderId };
 }
 
 function handleSaveReview(body) {
   var review = body.review;
-  if (!review || !validReviewId(review.id)) {
-    return { ok: false, error: "Review id is not valid." };
-  }
+  if (!review || !validReviewId(review.id)) return { ok: false, error: "Review id is not valid." };
   var name = String(review.name || "").trim();
   if (!name) return { ok: false, error: "Give the review a name." };
-  if (!review.pdfFileId) return { ok: false, error: "Upload a PDF first." };
 
   var incidentCount = clampCount(review.incidentCount);
-  if (incidentCount === null) {
-    return { ok: false, error: "Number of incidents must be from 0 to 10." };
-  }
+  if (incidentCount === null) return { ok: false, error: "Number of incidents must be from 0 to 10." };
 
-  var pageCount = Number(review.pageCount);
-  if (!isFinite(pageCount) || pageCount < 1) {
-    return { ok: false, error: "The PDF has no pages." };
-  }
-  pageCount = Math.floor(pageCount);
-
-  var folder = getReviewsFolder();
-  var pdf;
-  try {
-    pdf = DriveApp.getFileById(review.pdfFileId);
-  } catch (err) {
-    return { ok: false, error: "PDF not found." };
-  }
-  if (!fileInFolder(pdf, folder)) return { ok: false, error: "PDF not found." };
+  var pageCount = Math.floor(Number(review.pageCount));
+  if (!isFinite(pageCount) || pageCount < 1) return { ok: false, error: "The PDF has no pages." };
 
   var pages = sanitizePages(review.pages, pageCount);
   if (pages.error) return { ok: false, error: pages.error };
 
   var existing = loadReview(review.id);
+  var pdfChunks;
+  var folderId;
+  var pdfSize;
+  if (review.pdfChunks && review.pdfChunks.length) {
+    pdfChunks = review.pdfChunks;
+    folderId = review.folderId;
+    pdfSize = Number(review.pdfSize) || 0;
+    if (existing && existing.folderId && existing.folderId !== folderId) trashFolder(existing.folderId);
+  } else if (existing && hasChunks(existing)) {
+    pdfChunks = existing.pdfChunks;
+    folderId = existing.folderId;
+    pdfSize = existing.pdfSize;
+    if (!pageCount) pageCount = existing.pageCount;
+  } else if (existing && existing.pdfFileId && !hasChunks(existing)) {
+    return { ok: false, error: RESAVE };
+  } else {
+    return { ok: false, error: "Upload a PDF first." };
+  }
+
   var record = {
     id: review.id,
     name: name,
     createdAt: existing && existing.createdAt ? existing.createdAt : new Date().toISOString(),
-    pdfFileId: review.pdfFileId,
+    pdfChunks: pdfChunks,
+    pdfSize: pdfSize,
+    folderId: folderId || "",
+    submissionsFolderId: existing && existing.submissionsFolderId ? existing.submissionsFolderId : "",
+    reviewFileId: existing && existing.reviewFileId ? existing.reviewFileId : "",
     pageCount: pageCount,
     incidentCount: incidentCount,
     pages: pages.value,
   };
 
-  trashNamed(folder, review.id + ".json");
-  folder.createFile(Utilities.newBlob(JSON.stringify(record, null, 2), MimeType.JSON, review.id + ".json"));
-  if (existing && existing.pdfFileId && existing.pdfFileId !== review.pdfFileId) {
-    trashFileById(existing.pdfFileId);
-  }
-  return { ok: true, review: record };
-}
+  var saved = persistReview(record);
+  invalidateReview(saved.id);
+  cacheReview(saved);
 
-function handleListReviews() {
-  var folder = getReviewsFolder();
-  var files = folder.getFiles();
-  var reviews = [];
-  while (files.hasNext()) {
-    var file = files.next();
-    if (!isJsonName(file.getName())) continue;
-    try {
-      var review = JSON.parse(file.getBlob().getDataAsString());
-      if (!review || !review.id) continue;
-      review.submissionCount = countSubmissions(review.id);
-      reviews.push(review);
-    } catch (err) {
-      // Skip a file that is not a review.
+  var summary = publicReviewSummary(saved);
+  updateIndex(function (index) {
+    var found = false;
+    for (var i = 0; i < index.reviews.length; i++) {
+      if (index.reviews[i].id === saved.id) {
+        summary.submissionCount = index.reviews[i].submissionCount || 0;
+        index.reviews[i] = internalReviewSummary(saved, summary.submissionCount);
+        found = true;
+        break;
+      }
     }
-  }
-  reviews.sort(function (a, b) {
-    return String(b.createdAt || "").localeCompare(String(a.createdAt || ""));
+    if (!found) index.reviews.unshift(internalReviewSummary(saved, 0));
   });
-  return { ok: true, reviews: reviews };
+  summary.submissionCount = summary.submissionCount || 0;
+  return { ok: true, review: summary };
 }
 
 function handleDeleteReview(body) {
   var review = loadReview(body.reviewId);
   if (!review) return { ok: false, error: "Review not found." };
 
-  trashNamed(getReviewsFolder(), review.id + ".json");
-  trashFileById(review.pdfFileId);
-  var subs = getFolder().getFoldersByName(review.id);
-  if (subs.hasNext()) subs.next().setTrashed(true);
+  if (review.reviewFileId) trashFileById(review.reviewFileId);
+  else trashNamed(getReviewsFolder(), review.id + ".json");
+  if (review.folderId) trashFolder(review.folderId);
+  if (review.pdfFileId) trashFileById(review.pdfFileId);
+  if (review.submissionsFolderId) trashFolder(review.submissionsFolderId);
+
+  invalidateReview(review.id);
+  updateIndex(function (index) {
+    var reviews = [];
+    for (var i = 0; i < index.reviews.length; i++) {
+      if (index.reviews[i].id !== review.id) reviews.push(index.reviews[i]);
+    }
+    index.reviews = reviews;
+    var submissions = [];
+    for (var s = 0; s < index.submissions.length; s++) {
+      if (index.submissions[s].reviewId !== review.id) submissions.push(index.submissions[s]);
+    }
+    index.submissions = submissions;
+  });
   return { ok: true };
 }
 
@@ -338,11 +346,67 @@ function publicReview(review) {
     pageCount: review.pageCount,
     incidentCount: clampCount(review.incidentCount) || 0,
     pages: review.pages || {},
+    pdfChunkCount: review.pdfChunks ? review.pdfChunks.length : 0,
   };
+}
+
+function publicReviewSummary(review) {
+  return {
+    id: review.id,
+    name: review.name,
+    createdAt: review.createdAt,
+    incidentCount: review.incidentCount || 0,
+    submissionCount: review.submissionCount || 0,
+  };
+}
+
+function internalReviewSummary(review, submissionCount) {
+  return {
+    id: review.id,
+    name: review.name,
+    createdAt: review.createdAt,
+    incidentCount: review.incidentCount || 0,
+    submissionCount: submissionCount || 0,
+    reviewFileId: review.reviewFileId || "",
+    folderId: review.folderId || "",
+  };
+}
+
+function hasChunks(review) {
+  return review && review.pdfChunks && review.pdfChunks.length > 0;
 }
 
 function loadReview(id) {
   if (!validReviewId(id)) return null;
+  var cache = CacheService.getScriptCache();
+  var hit = cache.get("review:" + id);
+  if (hit) {
+    try {
+      return JSON.parse(hit);
+    } catch (err) {
+      // Cache entry was cut off. Read Drive below.
+    }
+  }
+
+  var review = null;
+  var index = readIndex();
+  var reviewFileId = "";
+  for (var i = 0; i < index.reviews.length; i++) {
+    if (index.reviews[i].id === id) reviewFileId = index.reviews[i].reviewFileId || "";
+  }
+  if (reviewFileId) {
+    try {
+      review = JSON.parse(DriveApp.getFileById(reviewFileId).getBlob().getDataAsString());
+    } catch (err) {
+      review = null;
+    }
+  }
+  if (!review) review = loadReviewByName(id);
+  if (review) cacheReview(review);
+  return review;
+}
+
+function loadReviewByName(id) {
   var files = getReviewsFolder().getFilesByName(id + ".json");
   if (!files.hasNext()) return null;
   try {
@@ -352,6 +416,52 @@ function loadReview(id) {
   } catch (err) {
     return null;
   }
+}
+
+function cacheReview(review) {
+  var json = JSON.stringify(review);
+  if (json.length > CACHE_VALUE_LIMIT) return;
+  CacheService.getScriptCache().put("review:" + review.id, json, CACHE_TTL);
+}
+
+function invalidateReview(id) {
+  CacheService.getScriptCache().remove("review:" + id);
+}
+
+function persistReview(record) {
+  var json = JSON.stringify(record, null, 2);
+  if (record.reviewFileId) {
+    try {
+      var existing = DriveApp.getFileById(record.reviewFileId);
+      existing.setContent(json);
+      return record;
+    } catch (err) {
+      record.reviewFileId = "";
+    }
+  }
+  var file = getReviewsFolder().createFile(Utilities.newBlob(json, MimeType.JSON, record.id + ".json"));
+  record.reviewFileId = file.getId();
+  file.setContent(JSON.stringify(record, null, 2));
+  return record;
+}
+
+function submissionsFolderFor(review) {
+  if (review.submissionsFolderId) {
+    try {
+      var existing = DriveApp.getFolderById(review.submissionsFolderId);
+      if (!existing.isTrashed()) return existing;
+    } catch (err) {
+      review.submissionsFolderId = "";
+    }
+  }
+  var created = getFolder().createFolder(review.id);
+  review.submissionsFolderId = created.getId();
+  if (review.reviewFileId || review.id) {
+    var saved = persistReview(review);
+    review.reviewFileId = saved.reviewFileId;
+    cacheReview(review);
+  }
+  return created;
 }
 
 function validReviewId(id) {
@@ -418,11 +528,183 @@ function readSubmission(file) {
   };
 }
 
+function submissionSummary(id, record) {
+  return {
+    id: id,
+    reviewId: record.reviewId || "",
+    reviewName: record.reviewName || "",
+    submittedAt: record.submittedAt || "",
+    mrn: mrnFromAnswers(record.answers),
+    patientName: answerValue(record.answers, [], ["Patient name"]),
+    provider: answerValue(record.answers, ["providerName"], ["Provider Name"]),
+  };
+}
+
+function readIndex() {
+  var cached = readIndexCache();
+  if (cached) return cached;
+  var index = readIndexFromDrive();
+  writeIndexCache(index);
+  return index;
+}
+
+function readIndexFromDrive() {
+  var file = getIndexFile();
+  if (!file) return rebuildIndex();
+  try {
+    var index = JSON.parse(file.getBlob().getDataAsString());
+    if (!index || !index.reviews || !index.submissions) return rebuildIndex();
+    return index;
+  } catch (err) {
+    return rebuildIndex();
+  }
+}
+
+function getIndexFile() {
+  var id = PropertiesService.getScriptProperties().getProperty(INDEX_FILE_ID_KEY);
+  if (!id) return null;
+  try {
+    var file = DriveApp.getFileById(id);
+    if (!file.isTrashed()) return file;
+  } catch (err) {
+    // Rebuild below.
+  }
+  return null;
+}
+
+function rebuildIndex() {
+  var reviews = [];
+  var reviewFiles = getReviewsFolder().getFiles();
+  while (reviewFiles.hasNext()) {
+    var file = reviewFiles.next();
+    if (!isJsonName(file.getName()) || file.getName() === "index.json") continue;
+    try {
+      var review = JSON.parse(file.getBlob().getDataAsString());
+      if (!review || !review.id) continue;
+      if (!review.reviewFileId) review.reviewFileId = file.getId();
+      reviews.push(internalReviewSummary(review, 0));
+    } catch (err) {
+      // Skip a file that is not a review.
+    }
+  }
+
+  var submissions = [];
+  eachSubmissionFile(function (file) {
+    try {
+      var data = JSON.parse(file.getBlob().getDataAsString());
+      if (!data || !data.answers) return;
+      submissions.push(submissionSummary(file.getId(), data));
+    } catch (err) {
+      // Skip.
+    }
+  });
+  for (var i = 0; i < reviews.length; i++) {
+    var count = 0;
+    for (var s = 0; s < submissions.length; s++) {
+      if (submissions[s].reviewId === reviews[i].id) count++;
+    }
+    reviews[i].submissionCount = count;
+  }
+  submissions.sort(function (a, b) {
+    return String(b.submittedAt).localeCompare(String(a.submittedAt));
+  });
+  var index = { reviews: reviews, submissions: submissions };
+  writeIndexFile(index);
+  return index;
+}
+
+function updateIndex(mutator) {
+  var lock = LockService.getScriptLock();
+  lock.waitLock(30000);
+  try {
+    var index = readIndexFromDrive();
+    mutator(index);
+    writeIndexFile(index);
+    writeIndexCache(index);
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function writeIndexFile(index) {
+  var json = JSON.stringify(index);
+  var existing = getIndexFile();
+  if (existing) {
+    existing.setContent(json);
+    return;
+  }
+  var file = getFolder().createFile(Utilities.newBlob(json, MimeType.JSON, "peerapp index.json"));
+  PropertiesService.getScriptProperties().setProperty(INDEX_FILE_ID_KEY, file.getId());
+}
+
+function writeIndexCache(index) {
+  var cache = CacheService.getScriptCache();
+  clearIndexCache(cache);
+  var json = JSON.stringify(index);
+  if (json.length <= CACHE_VALUE_LIMIT) {
+    cache.put("peerapp-index", json, CACHE_TTL);
+    return;
+  }
+  var parts = Math.ceil(json.length / CACHE_VALUE_LIMIT);
+  if (parts > 20) return;
+  cache.put("peerapp-index-n", String(parts), CACHE_TTL);
+  for (var i = 0; i < parts; i++) {
+    cache.put("peerapp-index-" + i, json.substring(i * CACHE_VALUE_LIMIT, (i + 1) * CACHE_VALUE_LIMIT), CACHE_TTL);
+  }
+}
+
+function readIndexCache() {
+  var cache = CacheService.getScriptCache();
+  var whole = cache.get("peerapp-index");
+  if (whole) {
+    try {
+      return JSON.parse(whole);
+    } catch (err) {
+      return null;
+    }
+  }
+  var count = Number(cache.get("peerapp-index-n") || "0");
+  if (!count) return null;
+  var json = "";
+  for (var i = 0; i < count; i++) {
+    var part = cache.get("peerapp-index-" + i);
+    if (!part) return null;
+    json += part;
+  }
+  try {
+    return JSON.parse(json);
+  } catch (err) {
+    return null;
+  }
+}
+
+function clearIndexCache(cache) {
+  var keys = ["peerapp-index", "peerapp-index-n"];
+  for (var i = 0; i < 20; i++) keys.push("peerapp-index-" + i);
+  cache.removeAll(keys);
+}
+
+function indexHasSubmission(index, id) {
+  for (var i = 0; i < index.submissions.length; i++) {
+    if (index.submissions[i].id === id) return true;
+  }
+  return false;
+}
+
+function bumpReviewCount(index, reviewId, delta) {
+  for (var i = 0; i < index.reviews.length; i++) {
+    if (index.reviews[i].id === reviewId) {
+      index.reviews[i].submissionCount = Math.max(0, (index.reviews[i].submissionCount || 0) + delta);
+    }
+  }
+}
+
 function eachSubmissionFile(visitor) {
   var parent = getFolder();
   var files = parent.getFiles();
   while (files.hasNext()) {
     var file = files.next();
+    if (file.getName() === "peerapp index.json") continue;
     if (isJsonName(file.getName())) visitor(file);
   }
   var folders = parent.getFolders();
@@ -435,56 +717,26 @@ function eachSubmissionFile(visitor) {
   }
 }
 
-function countSubmissions(reviewId) {
-  var folders = getFolder().getFoldersByName(reviewId);
-  if (!folders.hasNext()) return 0;
-  var count = 0;
-  var files = folders.next().getFiles();
-  while (files.hasNext()) {
-    if (isJsonName(files.next().getName())) count++;
-  }
-  return count;
-}
-
-function reviewSubmissionsFolder(reviewId, create) {
-  var parent = getFolder();
-  var found = parent.getFoldersByName(reviewId);
-  if (found.hasNext()) return found.next();
-  if (!create) return null;
-  return parent.createFolder(reviewId);
-}
-
-function fileInSubmissions(file) {
-  var rootId = getFolder().getId();
-  var parents = file.getParents();
+function folderParentIs(folder, parentId) {
+  var parents = folder.getParents();
   while (parents.hasNext()) {
-    var folder = parents.next();
-    if (folder.getId() === rootId) return true;
-    var grandparents = folder.getParents();
-    while (grandparents.hasNext()) {
-      if (grandparents.next().getId() === rootId) return true;
-    }
+    if (parents.next().getId() === parentId) return true;
   }
   return false;
 }
 
-// Global failed-attempt counter. Five wrong passwords in 15 minutes
-// locks admin actions for the next 15 minutes.
-function authorize(password) {
-  var lock = LockService.getScriptLock();
+function trashFolder(id) {
+  if (!id) return;
   try {
-    lock.waitLock(10000);
+    DriveApp.getFolderById(id).setTrashed(true);
   } catch (err) {
-    return { ok: false, error: "Try again in a moment." };
-  }
-  try {
-    return checkPassword(password);
-  } finally {
-    lock.releaseLock();
+    // Already gone.
   }
 }
 
-function checkPassword(password) {
+// A correct password only reads Script Properties.
+// The script lock is taken only while recording a wrong password.
+function authorize(password) {
   var props = PropertiesService.getScriptProperties();
   var now = Date.now();
   var lockUntil = Number(props.getProperty(LOCK_KEY) || "0");
@@ -493,37 +745,45 @@ function checkPassword(password) {
   }
 
   var expected = props.getProperty(PASSWORD_KEY);
-  if (!expected) {
-    return { ok: false, error: "Admin password is not set" };
-  }
+  if (!expected) return { ok: false, error: "Admin password is not set" };
+  if (String(password || "") === String(expected)) return { ok: true };
+  return recordFailedPassword(now);
+}
 
-  if (String(password || "") === String(expected)) {
-    props.deleteProperty(FAIL_KEY);
-    props.deleteProperty(LOCK_KEY);
-    return { ok: true };
-  }
-
-  var fails = [];
+function recordFailedPassword(now) {
+  var lock = LockService.getScriptLock();
   try {
-    fails = JSON.parse(props.getProperty(FAIL_KEY) || "[]");
+    lock.waitLock(10000);
   } catch (err) {
-    fails = [];
+    return { ok: false, error: "Try again in a moment." };
   }
-  if (!Array.isArray(fails)) fails = [];
-
-  fails = fails.filter(function (time) {
-    return now - Number(time) < WINDOW_MS;
-  });
-  fails.push(now);
-
-  if (fails.length >= MAX_FAILS) {
-    props.setProperty(LOCK_KEY, String(now + WINDOW_MS));
-    props.deleteProperty(FAIL_KEY);
-    return { ok: false, error: "Too many attempts, try again later" };
+  try {
+    var props = PropertiesService.getScriptProperties();
+    var lockUntil = Number(props.getProperty(LOCK_KEY) || "0");
+    if (lockUntil > Date.now()) {
+      return { ok: false, error: "Too many attempts, try again later" };
+    }
+    var fails = [];
+    try {
+      fails = JSON.parse(props.getProperty(FAIL_KEY) || "[]");
+    } catch (err) {
+      fails = [];
+    }
+    if (!Array.isArray(fails)) fails = [];
+    fails = fails.filter(function (time) {
+      return now - Number(time) < WINDOW_MS;
+    });
+    fails.push(now);
+    if (fails.length >= MAX_FAILS) {
+      props.setProperty(LOCK_KEY, String(now + WINDOW_MS));
+      props.deleteProperty(FAIL_KEY);
+      return { ok: false, error: "Too many attempts, try again later" };
+    }
+    props.setProperty(FAIL_KEY, JSON.stringify(fails));
+    return { ok: false, error: "Wrong password" };
+  } finally {
+    lock.releaseLock();
   }
-
-  props.setProperty(FAIL_KEY, JSON.stringify(fails));
-  return { ok: false, error: "Wrong password" };
 }
 
 function getFolder() {
@@ -532,10 +792,6 @@ function getFolder() {
 
 function getReviewsFolder() {
   return getNamedFolder(REVIEWS_FOLDER_NAME, REVIEWS_FOLDER_ID_KEY);
-}
-
-function getTmpFolder() {
-  return getNamedFolder(TMP_FOLDER_NAME, TMP_FOLDER_ID_KEY);
 }
 
 function getNamedFolder(name, propKey) {
@@ -557,37 +813,6 @@ function getNamedFolder(name, propKey) {
   return folder;
 }
 
-function fileInFolder(file, folder) {
-  var parents = file.getParents();
-  var folderId = folder.getId();
-  while (parents.hasNext()) {
-    if (parents.next().getId() === folderId) return true;
-  }
-  return false;
-}
-
-function writeTempJson(uploadId, meta) {
-  var folder = getTmpFolder();
-  var name = uploadId + ".json";
-  trashNamed(folder, name);
-  folder.createFile(Utilities.newBlob(JSON.stringify(meta), MimeType.JSON, name));
-}
-
-function readTempJson(uploadId) {
-  if (!uploadId) return null;
-  var files = getTmpFolder().getFilesByName(uploadId + ".json");
-  if (!files.hasNext()) return null;
-  try {
-    return JSON.parse(files.next().getBlob().getDataAsString());
-  } catch (err) {
-    return null;
-  }
-}
-
-function partName(uploadId, index) {
-  return uploadId + "." + index + ".part";
-}
-
 function trashNamed(folder, name) {
   var files = folder.getFilesByName(name);
   while (files.hasNext()) files.next().setTrashed(true);
@@ -600,36 +825,6 @@ function trashFileById(id) {
   } catch (err) {
     // Already gone.
   }
-}
-
-function cleanupOldTempFiles() {
-  var folder = getTmpFolder();
-  var cutoff = Date.now() - 24 * 60 * 60 * 1000;
-  var files = folder.getFiles();
-  while (files.hasNext()) {
-    var file = files.next();
-    if (file.getDateCreated().getTime() < cutoff) file.setTrashed(true);
-  }
-}
-
-function sliceBytes(bytes, start, end) {
-  if (bytes.slice) return bytes.slice(start, end);
-  var out = [];
-  for (var i = start; i < end; i++) out.push(bytes[i]);
-  return out;
-}
-
-function mergeBytes(parts) {
-  var total = 0;
-  for (var i = 0; i < parts.length; i++) total += parts[i].length;
-  var out = [];
-  out.length = total;
-  var offset = 0;
-  for (var p = 0; p < parts.length; p++) {
-    var part = parts[p];
-    for (var j = 0; j < part.length; j++) out[offset++] = part[j];
-  }
-  return out;
 }
 
 function isJsonName(name) {

@@ -65,9 +65,9 @@ Submissions are saved by a Google Apps Script web app in your Google account. Th
 4. Choose **Deploy > New deployment**. Pick **Web app**. Set **Execute as** to **Me** and **Who has access** to **Anyone**. Deploy, then authorize the app.
 5. Copy the web app URL (it ends in `/exec`) into `src/config.js` as `APPS_SCRIPT_URL`.
 
-The script creates three Drive folders when they are first needed: `peerapp submissions` (answer files, with a subfolder per review), `peerapp reviews` (the review and its PDF), and `peerapp tmp` (upload pieces, removed after the PDF is assembled). Drive files stay private to your account. The site only sees them through the web app.
+The script keeps a `peerapp index.json` file in `peerapp submissions` so the admin page can list reviews and submissions without opening every file. Each review PDF is stored as separate chunk files in its own folder under `peerapp reviews`. Drive files stay private to your account.
 
-If you already deployed an older copy of `Code.gs`, replace the whole script with the file in this repo, then redeploy with **Deploy > Manage deployments > edit (pencil) > New version**. That keeps the same `/exec` URL. `ADMIN_PASSWORD` can stay as it is. You do not need to create the folders yourself.
+`Code.gs` in this repo has changed since the copy that is deployed. Paste the new file over the script, then redeploy with **Deploy > Manage deployments > edit (pencil) > New version**. That keeps the same `/exec` URL already in `src/config.js`. Leave `ADMIN_PASSWORD` as it is. Reviews saved before this change need to be created again; opening one shows "This review needs to be re-saved".
 
 Until `APPS_SCRIPT_URL` is filled in, Submit still shows the on-page summary and says Drive is not set up, and the admin page says it is not configured.
 
@@ -77,7 +77,7 @@ Until `APPS_SCRIPT_URL` is filled in, Submit still shows the on-page summary and
 2. Choose **New review** and give it a name.
 3. Set **Number of incidents** (0 to 10). The page shows that many Peer Review - Incident sections. Lowering the number drops page assignments for the incidents you remove, and asks first if any were set.
 4. Drop in the reference PDF, or choose a file. It can be large, but it must be under about 45 MB. The file uploads in pieces.
-5. For any question, type the PDF pages to show, like `3-7, 12, 40-45`. A question can have up to 50 pages. Click the question to preview those pages.
+5. Click a question, then click page thumbnails to choose its pages. Shift-click selects a range. A question can have up to 50 pages. Magnify a thumbnail to read it before choosing. **Show selected only** steps through that question's pages.
 6. Choose **Save review**. Copy the subject link. It looks like `https://g1e-e.github.io/peerapp/?review=` followed by a long id. That id is the only key the subject needs.
 7. **Open** edits a review later. **Submissions** lists the answers, and **Show** can limit the list to one review.
 
