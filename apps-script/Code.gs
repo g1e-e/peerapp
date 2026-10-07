@@ -472,12 +472,12 @@ function cleanProcedureTimes(value) {
 
 function cleanClock(value) {
   var text = String(value || "").trim();
-  var match = text.match(/^(\d{2}):(\d{2})$/);
+  var match = text.match(/^(\d{1,2}):(\d{2})(?::\d{2})?$/);
   if (!match) return "";
   var hours = Number(match[1]);
   var minutes = Number(match[2]);
   if (hours > 23 || minutes > 59) return "";
-  return text;
+  return (hours < 10 ? "0" : "") + hours + ":" + match[2];
 }
 
 function hasChunks(review) {

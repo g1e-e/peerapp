@@ -34,10 +34,22 @@ export function normalizeProcedureTimes(value) {
 export function formatProcedureLine(times) {
   const start = times && times.start;
   const end = times && times.end;
-  if (!start && !end) return "";
-  if (start && end) return `Procedure start ${start}, end ${end} (${durationLabel(start, end)})`;
-  if (start) return `Procedure start ${start}`;
-  return `Procedure end ${end}`;
+  if (start && end) return `Procedure start: ${start} · end: ${end} (${compactDuration(start, end)})`;
+  if (start) return `Procedure start: ${start}`;
+  if (end) return `Procedure end: ${end}`;
+  return "";
+}
+
+function compactDuration(start, end) {
+  const [startHour, startMinute] = start.split(":").map(Number);
+  const [endHour, endMinute] = end.split(":").map(Number);
+  let minutes = endHour * 60 + endMinute - (startHour * 60 + startMinute);
+  if (minutes < 0) minutes += 24 * 60;
+  const hours = Math.floor(minutes / 60);
+  const rest = minutes % 60;
+  if (hours && rest) return `${hours}h ${rest}m`;
+  if (hours) return `${hours}h`;
+  return `${rest}m`;
 }
 
 export function durationLabel(start, end) {
@@ -153,10 +165,10 @@ function fromClock(hours, minutes, suffix) {
 
 function clockOrEmpty(value) {
   const text = String(value || "").trim();
-  const match = text.match(/^(\d{2}):(\d{2})$/);
+  const match = text.match(/^(\d{1,2}):(\d{2})(?::\d{2})?$/);
   if (!match) return "";
   const hours = Number(match[1]);
   const minutes = Number(match[2]);
   if (hours > 23 || minutes > 59) return "";
-  return text;
+  return `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}`;
 }
