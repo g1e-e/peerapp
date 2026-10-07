@@ -1,1 +1,1 @@
-console.log('Hello from js-app');
+console.log('Hello from arapeerreviewapp');
