@@ -11,7 +11,7 @@ export { MAX_PDF_BYTES };
 
 const CONCURRENCY = 4;
 
-export async function uploadPdf(file, password, onProgress) {
+export async function uploadPdf(file, token, onProgress) {
   const bytes = new Uint8Array(await file.arrayBuffer());
   if (bytes.length > MAX_PDF_BYTES) {
     throw new Error("This PDF is over 45 MB. Compress it and try again.");
@@ -21,7 +21,7 @@ export async function uploadPdf(file, password, onProgress) {
   const chunkCount = Math.ceil(bytes.length / CHUNK_BYTES);
   const started = await postToDrive({
     action: "uploadStart",
-    password,
+    token,
     name: file.name,
     size: bytes.length,
     chunkCount,
@@ -33,7 +33,7 @@ export async function uploadPdf(file, password, onProgress) {
     const slice = bytes.subarray(index * CHUNK_BYTES, (index + 1) * CHUNK_BYTES);
     const saved = await withRetry(() => postToDrive({
       action: "uploadChunk",
-      password,
+      token,
       folderId: started.folderId,
       index,
       data: uint8ToBase64(slice),
@@ -45,13 +45,13 @@ export async function uploadPdf(file, password, onProgress) {
 
   return postToDrive({
     action: "uploadFinish",
-    password,
+    token,
     uploadId: started.uploadId,
     fileIds,
   });
 }
 
-export async function downloadReviewPdf(reviewId, chunkCount, onProgress) {
+export async function downloadReviewPdf(reviewId, chunkCount, onProgress, auth) {
   const total = Number(chunkCount);
   if (!total) throw new Error("This review needs to be re-saved");
 
@@ -62,6 +62,7 @@ export async function downloadReviewPdf(reviewId, chunkCount, onProgress) {
       action: "getPdfChunk",
       reviewId,
       index,
+      ...(auth || {}),
     }));
     parts[index] = base64ToBytes(chunk.data || "");
     finished += 1;

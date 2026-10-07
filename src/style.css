@@ -525,6 +525,75 @@ body.admin-body {
   font-weight: 600;
 }
 
+.prep-review .admin-when {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.access-badge {
+  display: inline-block;
+  padding: 0.12rem 0.5rem;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+.access-badge.is-open {
+  background: #fff4d6;
+  color: #7a4e00;
+  border: 1px solid #e2c36a;
+}
+
+.access-badge.is-protected {
+  background: var(--accent-soft);
+  color: var(--accent-dark);
+  border: 1px solid #b7dfe3;
+}
+
+body.is-gated .layout {
+  display: none;
+}
+
+.access-gate {
+  min-height: 100vh;
+  min-height: 100dvh;
+  display: grid;
+  place-items: center;
+  padding: 1.5rem;
+  background: var(--bg);
+}
+
+.access-card {
+  width: min(24rem, 100%);
+  margin: 0;
+  padding: 1.25rem;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: #fff;
+}
+
+.access-card h1 {
+  margin: 0 0 0.4rem;
+  font-size: 1.35rem;
+}
+
+.access-card > p {
+  margin: 0 0 0.9rem;
+  color: var(--muted);
+}
+
+.access-card .button {
+  margin-top: 0.2rem;
+}
+
+.access-card .submit-status.error {
+  margin-top: 0.8rem;
+  color: #8a3324;
+}
+
 .admin-who {
   color: var(--muted);
   font-size: 0.9rem;
@@ -858,6 +927,23 @@ body.admin-body {
   margin: 0;
 }
 
+.prep-access {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 0.45rem 0.7rem;
+}
+
+.prep-access .field {
+  flex: 1 1 16rem;
+}
+
+.prep-access .button,
+.prep-access .access-badge {
+  margin-bottom: 0.15rem;
+}
+
 .prep-count-field {
   max-width: 12rem;
 }
@@ -935,6 +1021,12 @@ body.admin-body {
 .prep-link-url {
   margin: 0.35rem 0 0.7rem;
   word-break: break-all;
+}
+
+.prep-code-note {
+  margin: 0.55rem 0 0;
+  color: var(--muted);
+  font-size: 0.88rem;
 }
 
 @media (max-width: 800px) {

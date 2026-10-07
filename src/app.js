@@ -445,6 +445,7 @@ async function onSubmit(event) {
     if (reviewMode) {
       payload.reviewId = reviewId;
       payload.reviewName = reviewName;
+      payload.code = readAccessCode();
     }
     await postToDrive(payload);
     showSubmitStatus("Submitted", "success");
@@ -514,6 +515,147 @@ function showReviewFailure(message) {
   form.append(note);
 }
 
+const ACCESS_CODE_KEY = "peer-review-access";
+
+function accessCodeKey() {
+  return `${ACCESS_CODE_KEY}:${reviewId}`;
+}
+
+function readAccessCode() {
+  return sessionStorage.getItem(accessCodeKey()) || "";
+}
+
+function writeAccessCode(code) {
+  const value = String(code || "");
+  if (value) sessionStorage.setItem(accessCodeKey(), value);
+  else sessionStorage.removeItem(accessCodeKey());
+}
+
+function showClosedReview() {
+  document.body.classList.add("is-gated");
+  document.querySelector(".access-gate")?.remove();
+  const gate = document.createElement("main");
+  gate.className = "access-gate";
+  const card = document.createElement("section");
+  card.className = "access-card";
+  const message = document.createElement("p");
+  message.textContent = "This review is closed.";
+  card.append(message);
+  gate.append(card);
+  document.body.append(gate);
+}
+
+function showAccessGate(message) {
+  document.body.classList.add("is-gated");
+  document.querySelector(".access-gate")?.remove();
+  const gate = document.createElement("main");
+  gate.className = "access-gate";
+  const card = document.createElement("form");
+  card.className = "access-card";
+  const heading = document.createElement("h1");
+  heading.textContent = "Access code";
+  const help = document.createElement("p");
+  help.textContent = "Enter the code you were sent with this review.";
+  const label = document.createElement("label");
+  label.className = "field";
+  const caption = document.createElement("span");
+  caption.className = "field-label";
+  caption.textContent = "Access code";
+  const input = document.createElement("input");
+  input.type = "text";
+  input.autocomplete = "off";
+  input.spellcheck = false;
+  input.value = readAccessCode();
+  label.append(caption, input);
+  const button = document.createElement("button");
+  button.type = "submit";
+  button.className = "button button-primary";
+  button.textContent = "Continue";
+  const status = document.createElement("p");
+  status.className = "submit-status error";
+  status.hidden = !message;
+  status.textContent = message || "";
+  card.append(heading, help, label, button, status);
+  card.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    button.disabled = true;
+    status.hidden = true;
+    writeAccessCode(input.value.trim());
+    try {
+      const data = await postToDrive({
+        action: "reviewGate",
+        reviewId,
+        code: readAccessCode(),
+      });
+      if (data.needsCode) {
+        status.hidden = false;
+        status.textContent = "Enter the access code.";
+        return;
+      }
+      document.querySelector(".access-gate")?.remove();
+      document.body.classList.remove("is-gated");
+      await enterReview();
+    } catch (err) {
+      if (err.message === "This review is closed.") {
+        showClosedReview();
+        return;
+      }
+      if (err.message === "Invalid link or code") {
+        writeAccessCode("");
+        input.value = "";
+      }
+      status.hidden = false;
+      status.textContent = err.message || "Invalid link or code";
+    } finally {
+      button.disabled = false;
+    }
+  });
+  gate.append(card);
+  document.body.append(gate);
+  input.focus();
+}
+
+async function startReview() {
+  document.body.classList.add("is-gated");
+  const gate = document.createElement("main");
+  gate.className = "access-gate";
+  const card = document.createElement("section");
+  card.className = "access-card";
+  const message = document.createElement("p");
+  message.textContent = "Checking link…";
+  card.append(message);
+  gate.append(card);
+  document.body.append(gate);
+  if (!driveConfigured()) {
+    gate.remove();
+    document.body.classList.remove("is-gated");
+    showReviewFailure("This review link needs Google Drive, which is not set up yet.");
+    return;
+  }
+  try {
+    const data = await postToDrive({
+      action: "reviewGate",
+      reviewId,
+      code: readAccessCode(),
+    });
+    if (data.needsCode) {
+      showAccessGate("");
+      return;
+    }
+    gate.remove();
+    document.body.classList.remove("is-gated");
+    await enterReview();
+  } catch (err) {
+    gate.remove();
+    if (err.message === "This review is closed.") {
+      showClosedReview();
+      return;
+    }
+    if (err.message === "Invalid link or code") writeAccessCode("");
+    showAccessGate(err.message || "Invalid link or code");
+  }
+}
+
 async function enterReview() {
   const panel = document.querySelector("#pdf-panel");
   panel.classList.add("is-review");
@@ -533,7 +675,7 @@ async function enterReview() {
 
   let review;
   try {
-    const data = await postToDrive({ action: "getReview", reviewId });
+    const data = await postToDrive({ action: "getReview", reviewId, code: readAccessCode() });
     review = data.review;
   } catch (err) {
     showReviewFailure(err.message || "Could not open this review.");
@@ -556,7 +698,7 @@ async function enterReview() {
     referenceView.showProgress("Loading reference PDF…", 0);
     const bytes = await downloadReviewPdf(reviewId, review.pdfChunkCount, (done, total) => {
       referenceView.showProgress(`Loading reference PDF… part ${done} of ${total}`, done / total);
-    });
+    }, { code: readAccessCode() });
     referenceView.setPdf(await openPdf(bytes));
     referenceView.showMessage("Select a question to see its reference pages.");
   } catch (err) {
@@ -565,11 +707,7 @@ async function enterReview() {
 }
 
 if (reviewId) {
-  const hold = document.createElement("p");
-  hold.className = "segment-note";
-  hold.textContent = "Loading review…";
-  form.append(hold);
-  enterReview();
+  startReview();
 } else {
   const state = loadState();
   incidentCount = state.incidentCount;

@@ -57,8 +57,8 @@ export function mountPrep(root, options) {
   let pendingFile = null;
   let state = null;
 
-  function password() {
-    return options.getPassword();
+  function token() {
+    return options.getToken();
   }
 
   function showStatus(text, tone) {
@@ -126,7 +126,34 @@ export function mountPrep(root, options) {
       activeId: "",
       procedureTimes: { ...EMPTY_PROCEDURE_TIMES },
       timeFound: null,
+      accessCode: "",
+      closed: false,
     };
+  }
+
+  function normalizeCode(value) {
+    return String(value || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
+  }
+
+  function groupCode(value) {
+    const raw = normalizeCode(value);
+    return raw.replace(/(.{4})(?=.)/g, "$1-");
+  }
+
+  function generateAccessCode() {
+    const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+    const bytes = new Uint8Array(12);
+    crypto.getRandomValues(bytes);
+    let raw = "";
+    for (let i = 0; i < 12; i += 1) raw += alphabet[bytes[i] % alphabet.length];
+    return groupCode(raw);
+  }
+
+  function accessBadge(hasCode) {
+    const badge = document.createElement("span");
+    badge.className = hasCode ? "access-badge is-protected" : "access-badge is-open";
+    badge.textContent = hasCode ? "Protected" : "No access code";
+    return badge;
   }
 
   function setReviews(next) {
@@ -158,7 +185,10 @@ export function mountPrep(root, options) {
 
       const heading = document.createElement("p");
       heading.className = "admin-when";
-      heading.textContent = review.name || "Untitled review";
+      heading.append(accessBadge(!!review.hasCode));
+      const title = document.createElement("span");
+      title.textContent = review.name || "Untitled review";
+      heading.append(title);
 
       const meta = document.createElement("p");
       meta.className = "admin-who";
@@ -181,13 +211,19 @@ export function mountPrep(root, options) {
       copy.textContent = "Copy link";
       copy.addEventListener("click", () => copyLink(review.id, copy));
 
+      const closedToggle = document.createElement("button");
+      closedToggle.type = "button";
+      closedToggle.className = "button button-secondary";
+      closedToggle.textContent = review.closed ? "Reopen review" : "Close review";
+      closedToggle.addEventListener("click", () => toggleClosed(review, closedToggle));
+
       const remove = document.createElement("button");
       remove.type = "button";
       remove.className = "button button-secondary";
       remove.textContent = "Delete";
       remove.addEventListener("click", () => deleteReview(review));
 
-      actions.append(open, copy, remove);
+      actions.append(open, copy, closedToggle, remove);
       item.append(heading, meta, actions);
       list.append(item);
     }
@@ -266,7 +302,44 @@ export function mountPrep(root, options) {
       editor.replaceChildren();
       state = null;
     });
-    head.append(back, nameLabel, countLabel, drop);
+    const accessRow = document.createElement("div");
+    accessRow.className = "prep-access";
+    const codeLabel = document.createElement("label");
+    codeLabel.className = "field";
+    const codeCaption = document.createElement("span");
+    codeCaption.className = "field-label";
+    codeCaption.textContent = "Access code";
+    const codeInput = document.createElement("input");
+    codeInput.type = "text";
+    codeInput.id = "prep-access-code";
+    codeInput.autocomplete = "off";
+    codeInput.spellcheck = false;
+    codeInput.value = state.accessCode || "";
+    codeInput.addEventListener("input", () => {
+      state.accessCode = codeInput.value;
+      paintAccessBadge();
+    });
+    codeLabel.append(codeCaption, codeInput);
+    const generate = document.createElement("button");
+    generate.type = "button";
+    generate.className = "button button-secondary";
+    generate.textContent = "Generate";
+    generate.addEventListener("click", () => {
+      state.accessCode = generateAccessCode();
+      codeInput.value = state.accessCode;
+      paintAccessBadge();
+    });
+    const badge = accessBadge(normalizeCode(state.accessCode).length > 0);
+    badge.classList.add("prep-access-badge");
+    const closedToggle = document.createElement("button");
+    closedToggle.type = "button";
+    closedToggle.className = "button button-secondary";
+    closedToggle.id = "prep-closed-toggle";
+    closedToggle.textContent = state.closed ? "Reopen review" : "Close review";
+    closedToggle.addEventListener("click", () => toggleClosed(state, closedToggle));
+    accessRow.append(codeLabel, generate, badge, closedToggle);
+
+    head.append(back, nameLabel, countLabel, accessRow, drop);
 
     const questions = document.createElement("div");
     questions.className = "prep-questions";
@@ -512,11 +585,52 @@ export function mountPrep(root, options) {
     return null;
   }
 
+  function paintAccessBadge() {
+    const current = editor.querySelector(".prep-access-badge");
+    if (!current || !state) return;
+    const hasCode = normalizeCode(state.accessCode).length > 0;
+    current.className = `access-badge prep-access-badge ${hasCode ? "is-protected" : "is-open"}`;
+    current.textContent = hasCode ? "Protected" : "No access code";
+  }
+
+  async function toggleClosed(review, button) {
+    const next = !review.closed;
+    if (review === state && !state.savedId) {
+      state.closed = next;
+      button.textContent = next ? "Reopen review" : "Close review";
+      return;
+    }
+    button.disabled = true;
+    try {
+      const data = await postToDrive({
+        action: "setReviewClosed",
+        token: token(),
+        reviewId: review.id,
+        closed: next,
+      });
+      upsertReview(data.review);
+      if (state && state.id === review.id) {
+        state.closed = !!data.review.closed;
+        const headerButton = editor.querySelector("#prep-closed-toggle");
+        if (headerButton) headerButton.textContent = state.closed ? "Reopen review" : "Close review";
+      }
+    } catch (err) {
+      if (authFailed(err)) return;
+      showStatus(err.message || "Could not update the review.", "error");
+    } finally {
+      button.disabled = false;
+    }
+  }
+
   async function editReview(review) {
     showStatus("");
     let full;
     try {
-      const data = await postToDrive({ action: "getReview", reviewId: review.id });
+      const data = await postToDrive({
+        action: "getReviewAdmin",
+        token: token(),
+        reviewId: review.id,
+      });
       full = data.review;
     } catch (err) {
       if (authFailed(err)) return;
@@ -535,6 +649,8 @@ export function mountPrep(root, options) {
       savedId: full.id,
       procedureTimes: normalizeProcedureTimes(full.procedureTimes),
       timeFound: null,
+      accessCode: full.accessCode || "",
+      closed: !!full.closed,
     };
     pendingFile = null;
     pdfDoc = null;
@@ -543,7 +659,7 @@ export function mountPrep(root, options) {
     try {
       const bytes = await downloadReviewPdf(full.id, full.pdfChunkCount, (done, total) => {
         picker.showProgress(`Loading reference PDF… part ${done} of ${total}`);
-      });
+      }, { token: token() });
       pdfDoc = await openPdf(bytes);
       picker.setPdf(pdfDoc);
       picker.showMessage("Choose a question to select pages.");
@@ -569,6 +685,34 @@ export function mountPrep(root, options) {
     copy.textContent = "Copy";
     copy.addEventListener("click", () => copyLink(id, copy));
     box.append(caption, link, copy);
+    const code = groupCode(state && state.accessCode);
+    if (!code) return;
+    const codeCaption = document.createElement("p");
+    codeCaption.className = "field-label";
+    codeCaption.textContent = "Access code";
+    const codeText = document.createElement("p");
+    codeText.className = "prep-link-url";
+    codeText.textContent = code;
+    const copyCode = document.createElement("button");
+    copyCode.type = "button";
+    copyCode.className = "button button-secondary";
+    copyCode.textContent = "Copy";
+    copyCode.addEventListener("click", async () => {
+      const original = copyCode.textContent;
+      try {
+        await navigator.clipboard.writeText(code);
+        copyCode.textContent = "Copied";
+      } catch {
+        copyCode.textContent = code;
+      }
+      window.setTimeout(() => {
+        copyCode.textContent = original;
+      }, 2000);
+    });
+    const note = document.createElement("p");
+    note.className = "prep-code-note";
+    note.textContent = "Send the code separately from the link.";
+    box.append(codeCaption, codeText, copyCode, note);
   }
 
   function collectPages() {
@@ -600,6 +744,11 @@ export function mountPrep(root, options) {
       showStatus(collected.error, "error");
       return;
     }
+    const accessCode = groupCode(state.accessCode);
+    if (!accessCode) {
+      const ok = window.confirm("Without an access code, anyone with this link can see the PDF pages. Save without a code?");
+      if (!ok) return;
+    }
 
     button.disabled = true;
     try {
@@ -613,9 +762,11 @@ export function mountPrep(root, options) {
           start: state.procedureTimes.start || "",
           end: state.procedureTimes.end || "",
         },
+        accessCode,
+        closed: !!state.closed,
       };
       if (pendingFile) {
-        const uploaded = await uploadPdf(pendingFile, password(), (done, total) => {
+        const uploaded = await uploadPdf(pendingFile, token(), (done, total) => {
           showStatus(`Uploading ${done} of ${total}...`, "notice");
         });
         payload.pdfChunks = uploaded.pdfChunks;
@@ -627,9 +778,13 @@ export function mountPrep(root, options) {
       showStatus("Saving...", "notice");
       const saved = await postToDrive({
         action: "saveReview",
-        password: password(),
+        token: token(),
         review: payload,
       });
+      state.accessCode = accessCode;
+      const codeInput = editor.querySelector("#prep-access-code");
+      if (codeInput) codeInput.value = accessCode;
+      paintAccessBadge();
       state.pages = collected.pages;
       state.savedId = state.id;
       const linkBox = editor.querySelector(".prep-link");
@@ -649,7 +804,7 @@ export function mountPrep(root, options) {
     if (!ok) return;
     showStatus("");
     try {
-      await postToDrive({ action: "deleteReview", password: password(), reviewId: review.id });
+      await postToDrive({ action: "deleteReview", token: token(), reviewId: review.id });
       if (state && state.id === review.id) {
         editor.hidden = true;
         editor.replaceChildren();
