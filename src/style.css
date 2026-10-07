@@ -1,2 +1,265 @@
-body { font-family: system-ui, sans-serif; margin: 0; display: grid; place-items: center; min-height: 100vh; background: #f7f7fb; color: #222; }
-main { text-align: center; }
+:root {
+  --ink: #1c2836;
+  --muted: #5d6d7e;
+  --line: #d5e0ea;
+  --bg: #eef3f7;
+  --card: #ffffff;
+  --accent: #0f6e78;
+  --accent-dark: #0c5860;
+  --accent-soft: #e5f4f5;
+  --pdf: #f7fafc;
+  color-scheme: light;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  font-family: "Segoe UI", system-ui, sans-serif;
+  color: var(--ink);
+  background: var(--bg);
+  overflow: hidden;
+}
+
+.layout {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  height: 100vh;
+  height: 100dvh;
+}
+
+.pane {
+  min-width: 0;
+  min-height: 0;
+  overflow: auto;
+}
+
+.pane-form {
+  padding: 1.5rem 1.5rem 2.5rem;
+}
+
+.form-header h1 {
+  margin: 0;
+  font-size: 1.7rem;
+  letter-spacing: -0.02em;
+}
+
+.form-header p {
+  margin: 0.4rem 0 1.25rem;
+  color: var(--muted);
+}
+
+.load-note {
+  margin: 0 0 1rem;
+  padding: 0.8rem 1rem;
+  border: 1px solid #e2c36a;
+  border-radius: 10px;
+  background: #fff8e6;
+  color: var(--ink);
+}
+
+.segment {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 1rem 1.1rem 0.35rem;
+  margin-bottom: 0.9rem;
+  box-shadow: 0 1px 2px rgba(28, 40, 54, 0.04);
+}
+
+.segment h2,
+.summary h2 {
+  margin: 0 0 0.75rem;
+  font-size: 1.05rem;
+}
+
+.segment-note {
+  margin: -0.35rem 0 0.9rem;
+  color: var(--muted);
+  font-size: 0.88rem;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  margin: 0 0 0.95rem;
+}
+
+fieldset.field {
+  border: 0;
+  padding: 0;
+  min-inline-size: 0;
+}
+
+.field-label,
+legend {
+  font-size: 0.92rem;
+  font-weight: 600;
+  padding: 0;
+}
+
+input,
+textarea,
+select {
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  padding: 0.55rem 0.7rem;
+  border: 1px solid #c5d2de;
+  border-radius: 8px;
+  background: #fff;
+  color: var(--ink);
+  font: inherit;
+  font-size: 1rem;
+}
+
+textarea {
+  resize: vertical;
+  line-height: 1.45;
+}
+
+input:focus-visible,
+textarea:focus-visible,
+select:focus-visible,
+.button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-color: var(--accent);
+}
+
+.rating {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.rating-choice {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.35rem 0.65rem;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: #fff;
+  cursor: pointer;
+}
+
+.rating-choice:has(input:checked) {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.rating-choice input {
+  width: auto;
+  margin: 0;
+  accent-color: var(--accent);
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  margin-top: 0.3rem;
+}
+
+.button {
+  font: inherit;
+  font-size: 1rem;
+  border-radius: 9px;
+  padding: 0.55rem 1rem;
+  cursor: pointer;
+  border: 1px solid transparent;
+}
+
+.button-primary {
+  background: var(--accent);
+  color: #fff;
+}
+
+.button-primary:hover {
+  background: var(--accent-dark);
+}
+
+.button-secondary {
+  background: #fff;
+  color: var(--ink);
+  border-color: #c5d2de;
+}
+
+.button-secondary:hover {
+  background: #f4f8fb;
+}
+
+.summary {
+  margin-top: 1.25rem;
+  padding: 1rem 1.1rem 1.1rem;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+}
+
+.summary-text {
+  margin: 0 0 0.8rem;
+  padding: 0.85rem;
+  overflow: auto;
+  white-space: pre-wrap;
+  border-radius: 8px;
+  background: #f6f8fb;
+  font-family: ui-monospace, "Cascadia Code", "Segoe UI Mono", monospace;
+  font-size: 0.9rem;
+  line-height: 1.45;
+}
+
+.pane-pdf {
+  padding: 1rem;
+  background: var(--pdf);
+  border-left: 1px solid var(--line);
+}
+
+.pdf-frame {
+  height: 100%;
+  min-height: 12rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  border: 2px solid #9eb0c2;
+  border-radius: 14px;
+  background: #fff;
+  color: var(--muted);
+}
+
+.pdf-empty h2 {
+  margin: 0 0 0.35rem;
+  color: var(--ink);
+  font-size: 1.05rem;
+  font-weight: 600;
+}
+
+.pdf-empty p {
+  margin: 0;
+}
+
+@media (max-width: 760px) {
+  .layout {
+    grid-template-columns: 1fr;
+    grid-template-rows: minmax(0, 1.7fr) minmax(0, 1fr);
+  }
+
+  .pane-form {
+    padding: 1.1rem 1rem 1.5rem;
+  }
+
+  .pane-pdf {
+    border-left: 0;
+    border-top: 1px solid var(--line);
+  }
+}

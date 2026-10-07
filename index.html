@@ -4,13 +4,46 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Peer Review App</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%230f6e78'/%3E%3C/svg%3E">
   <link rel="stylesheet" href="src/style.css">
 </head>
 <body>
-  <main>
-    <h1>Peer Review App</h1>
-    <p id="status">Loading...</p>
-  </main>
+  <div class="layout">
+    <section class="pane pane-form" aria-label="Peer review questionnaire">
+      <header class="form-header">
+        <h1>Peer Review App</h1>
+        <p>Answers are saved in this browser as you type.</p>
+      </header>
+      <form id="review-form" autocomplete="off"></form>
+      <div class="actions">
+        <button type="submit" class="button button-primary" form="review-form">Submit</button>
+        <button type="button" class="button button-secondary" id="clear-button">Clear</button>
+      </div>
+      <section id="summary" class="summary" hidden></section>
+    </section>
+
+    <aside class="pane pane-pdf" aria-label="Reference PDF">
+      <div class="pdf-frame">
+        <div class="pdf-empty">
+          <h2>Reference PDF</h2>
+          <p>The reference document will appear here.</p>
+        </div>
+      </div>
+    </aside>
+  </div>
   <script type="module" src="src/app.js"></script>
+  <script>
+    // Runs after app.js. If the questions are missing, the page was almost
+    // certainly opened as a file, which blocks JavaScript modules.
+    window.addEventListener("DOMContentLoaded", () => {
+      const form = document.querySelector("#review-form");
+      if (!form || form.childElementCount > 0) return;
+
+      const note = document.createElement("p");
+      note.className = "load-note";
+      note.textContent = "The questions could not load. Browsers block JavaScript modules when this page is opened as a file. Serve the folder with a static server, or open the GitHub Pages site.";
+      form.before(note);
+    });
+  </script>
 </body>
 </html>
