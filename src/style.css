@@ -769,6 +769,15 @@ body.is-gated .layout {
   background: var(--accent-soft);
 }
 
+.toc-entry:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.toc-entry:disabled:hover {
+  background: transparent;
+}
+
 .toc-page {
   color: var(--muted);
   font-size: 0.82rem;

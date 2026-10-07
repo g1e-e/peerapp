@@ -103,6 +103,7 @@ export function createPagePicker(container) {
 
   const cache = new Map();
   let pdf = null;
+  let pageList = [];
   let pageCount = 0;
   let size = "medium";
   let selected = [];
@@ -161,7 +162,8 @@ export function createPagePicker(container) {
       const start = Math.min(lastClicked, page);
       const end = Math.max(lastClicked, page);
       const turningOn = !have.has(page);
-      for (let number = start; number <= end; number += 1) {
+      for (const number of pageList) {
+        if (number < start || number > end) continue;
         if (turningOn) have.add(number);
         else have.delete(number);
       }
@@ -197,7 +199,7 @@ export function createPagePicker(container) {
       grid.append(note);
       return;
     }
-    for (let page = 1; page <= pageCount; page += 1) {
+    for (const page of pageList) {
       const cell = document.createElement("button");
       cell.type = "button";
       cell.className = "thumb";
@@ -240,13 +242,14 @@ export function createPagePicker(container) {
 
   async function paintThumb(cell) {
     const page = Number(cell.dataset.page);
+    const pdfPage = pdfPageFor(page);
     const width = cssWidth(cell);
-    const key = `${page}@${width}`;
+    const key = `${pdfPage}@${width}`;
     const generation = renderGeneration;
     let source = cache.get(key);
     if (!source) {
       try {
-        source = await renderPage(page, width, 1);
+        source = await renderPage(pdfPage, width, 1);
       } catch {
         return;
       }
@@ -302,12 +305,18 @@ export function createPagePicker(container) {
     return `${name} · ${count} page${count === 1 ? "" : "s"}`;
   }
 
+  function pdfPageFor(original) {
+    const index = pageList.indexOf(Number(original));
+    return index < 0 ? 0 : index + 1;
+  }
+
   function showSelectedView() {
     if (!selected.length) {
       selectedView.showMessage("No pages");
       return;
     }
-    selectedView.showPages(selected, selectedHeading());
+    const pdfPages = selected.map((page) => pdfPageFor(page)).filter((page) => page > 0);
+    selectedView.showPages(pdfPages, selectedHeading());
   }
 
   function scrollToPage(page) {
@@ -351,7 +360,11 @@ export function createPagePicker(container) {
       page.className = "toc-page";
       page.textContent = item.pageNumber ? String(item.pageNumber) : "";
       row.append(name, page);
-      if (item.pageNumber) row.addEventListener("click", () => onPick(item.pageNumber));
+      if (item.pageNumber && pageList.includes(item.pageNumber)) {
+        row.addEventListener("click", () => onPick(item.pageNumber));
+      } else {
+        row.disabled = true;
+      }
       const header = document.createElement("div");
       header.className = "toc-row";
       if (item.items && item.items.length) {
@@ -383,7 +396,8 @@ export function createPagePicker(container) {
         let dest = item.dest;
         if (typeof dest === "string") dest = await doc.getDestination(dest);
         if (Array.isArray(dest) && dest[0]) {
-          pageNumber = (await doc.getPageIndex(dest[0])) + 1;
+          const pdfPage = (await doc.getPageIndex(dest[0])) + 1;
+          pageNumber = pageList[pdfPage - 1] || 0;
         }
       } catch {
         pageNumber = 0;
@@ -439,13 +453,19 @@ export function createPagePicker(container) {
   }
 
   async function drawOverlay() {
-    overlayLabel.textContent = `PDF page ${overlayPage}`;
-    overlayPrev.disabled = overlayPage <= 1;
-    overlayNext.disabled = overlayPage >= pageCount;
+    overlayLabel.textContent = `Page ${overlayPage}`;
+    const pdfPage = pdfPageFor(overlayPage);
+    const place = pageList.indexOf(overlayPage);
+    overlayPrev.disabled = place <= 0;
+    overlayNext.disabled = place < 0 || place >= pageList.length - 1;
     updateOverlayToggle();
     const width = Math.max(320, Math.min(900, overlayStage.clientWidth - 24));
+    if (!pdfPage) {
+      overlayLabel.textContent = "Could not draw this page.";
+      return;
+    }
     try {
-      const rendered = await renderPage(overlayPage, width, Math.min(window.devicePixelRatio || 1, 2));
+      const rendered = await renderPage(pdfPage, width, Math.min(window.devicePixelRatio || 1, 2));
       overlayCanvas.width = rendered.width;
       overlayCanvas.height = rendered.height;
       overlayCanvas.style.width = rendered.styleWidth;
@@ -461,8 +481,9 @@ export function createPagePicker(container) {
   }
 
   function moveOverlay(delta) {
-    const next = overlayPage + delta;
-    if (next < 1 || next > pageCount) return;
+    const place = pageList.indexOf(overlayPage);
+    const next = pageList[place + delta];
+    if (!next) return;
     overlayPage = next;
     drawOverlay();
   }
@@ -516,12 +537,22 @@ export function createPagePicker(container) {
   setSize("large");
 
   return {
-    setPdf(doc) {
+    setPdf(doc, sourcePages) {
       pdf = doc;
-      pageCount = doc ? doc.numPages : 0;
+      if (doc && Array.isArray(sourcePages) && sourcePages.length === doc.numPages) {
+        pageList = sourcePages.map((page) => Number(page));
+      } else if (doc) {
+        pageList = Array.from({ length: doc.numPages }, (_, index) => index + 1);
+      } else {
+        pageList = [];
+      }
+      pageCount = pageList.length;
       cache.clear();
       selectedView.setPdf(doc);
+      selectedView.setLabelFor((pdfPage) => pageList[pdfPage - 1] || pdfPage);
       buildGrid();
+      paintSelection();
+      if (showingSelected) showSelectedView();
       loadOutline(doc);
     },
     setActive(nextTitle, pages, nextUsage) {

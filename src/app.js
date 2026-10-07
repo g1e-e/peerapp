@@ -699,7 +699,9 @@ async function enterReview() {
     const bytes = await downloadReviewPdf(reviewId, review.pdfChunkCount, (done, total) => {
       referenceView.showProgress(`Loading reference PDF… part ${done} of ${total}`, done / total);
     }, { code: readAccessCode() });
+    const sourcePages = Array.isArray(review.sourcePages) ? review.sourcePages : [];
     referenceView.setPdf(await openPdf(bytes));
+    referenceView.setLabelFor((pageNumber) => sourcePages[pageNumber - 1] || pageNumber);
     referenceView.showMessage("Select a question to see its reference pages.");
   } catch (err) {
     referenceView.showMessage(err.message || "Could not load the reference PDF.");
