@@ -420,3 +420,137 @@ select:focus-visible,
     border-top: 1px solid var(--line);
   }
 }
+
+.form-header-top {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.admin-link {
+  color: var(--muted);
+  font-size: 0.85rem;
+  text-decoration: none;
+}
+
+.admin-link:hover {
+  color: var(--accent-dark);
+  text-decoration: underline;
+}
+
+.button:disabled {
+  opacity: 0.65;
+  cursor: progress;
+}
+
+.submit-status {
+  margin: 0.75rem 0 0;
+  font-size: 0.95rem;
+}
+
+.submit-status.success {
+  color: var(--accent-dark);
+}
+
+.submit-status.notice {
+  color: var(--muted);
+}
+
+.submit-status.error {
+  color: #8a3324;
+}
+
+body.admin-body {
+  height: auto;
+  min-height: 100%;
+  overflow: auto;
+}
+
+.admin-page {
+  max-width: 60rem;
+  margin: 0 auto;
+  padding: 1.5rem 1.25rem 3rem;
+}
+
+.admin-login {
+  max-width: 22rem;
+}
+
+.admin-board-grid {
+  display: grid;
+  grid-template-columns: minmax(16rem, 22rem) minmax(0, 1fr);
+  gap: 1rem;
+  align-items: start;
+  margin-top: 1rem;
+}
+
+.admin-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.admin-empty,
+.admin-placeholder {
+  margin: 0;
+  color: var(--muted);
+}
+
+.admin-item {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.2rem;
+  width: 100%;
+  padding: 0.75rem 0.85rem;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: #fff;
+  color: var(--ink);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.admin-item.is-selected {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.admin-when {
+  font-weight: 600;
+}
+
+.admin-who {
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.admin-detail h2 {
+  margin: 0 0 0.8rem;
+  font-size: 1.15rem;
+}
+
+.admin-fields div {
+  margin: 0 0 0.75rem;
+}
+
+.admin-fields dt {
+  font-size: 0.92rem;
+  font-weight: 600;
+}
+
+.admin-fields dd {
+  margin: 0.15rem 0 0;
+  white-space: pre-wrap;
+}
+
+@media (max-width: 760px) {
+  .admin-board-grid {
+    grid-template-columns: 1fr;
+  }
+}

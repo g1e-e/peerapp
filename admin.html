@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Peer Review App</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%230f6e78'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="src/style.css">
+</head>
+<body class="admin-body">
+  <main class="admin-page">
+    <header class="form-header">
+      <div class="form-header-top">
+        <h1>Submissions</h1>
+        <a class="admin-link" href="index.html">Back to the form</a>
+      </div>
+      <p>Saved copies from Google Drive.</p>
+    </header>
+
+    <p id="admin-config" class="load-note" hidden>Not configured yet.</p>
+
+    <form id="admin-login" class="admin-login" autocomplete="off">
+      <label class="field">
+        <span class="field-label">Password</span>
+        <input id="admin-password" type="password" inputmode="numeric" autocomplete="current-password">
+      </label>
+      <button type="submit" class="button button-primary" id="admin-unlock">Unlock</button>
+      <p id="admin-login-message" class="submit-status" role="status" hidden></p>
+    </form>
+
+    <section id="admin-board" hidden>
+      <div class="actions">
+        <button type="button" class="button button-secondary" id="admin-refresh">Refresh</button>
+        <button type="button" class="button button-secondary" id="admin-lock">Lock</button>
+      </div>
+      <p id="admin-board-message" class="submit-status" role="status" hidden></p>
+      <div class="admin-board-grid">
+        <ul id="admin-list" class="admin-list"></ul>
+        <article id="admin-detail" class="admin-detail">
+          <p class="admin-placeholder">Select a submission.</p>
+        </article>
+      </div>
+    </section>
+  </main>
+  <script type="module" src="src/admin.js"></script>
+</body>
+</html>

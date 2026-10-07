@@ -11,14 +11,18 @@
   <div class="layout">
     <section class="pane pane-form" aria-label="Peer review questionnaire">
       <header class="form-header">
-        <h1>Peer Review App</h1>
+        <div class="form-header-top">
+          <h1>Peer Review App</h1>
+          <a class="admin-link" href="admin.html">Admin</a>
+        </div>
         <p>Answers are saved in this browser as you type.</p>
       </header>
       <form id="review-form" autocomplete="off"></form>
       <div class="actions">
-        <button type="submit" class="button button-primary" form="review-form">Submit</button>
+        <button type="submit" class="button button-primary" id="submit-button" form="review-form">Submit</button>
         <button type="button" class="button button-secondary" id="clear-button">Clear</button>
       </div>
+      <p id="submit-status" class="submit-status" role="status" hidden></p>
       <section id="summary" class="summary" hidden></section>
     </section>
 
