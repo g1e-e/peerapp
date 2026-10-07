@@ -1,1 +1,1 @@
-console.log('Hello from arapeerreviewapp');
+console.log('Hello from peerapp');

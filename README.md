@@ -1,4 +1,4 @@
-# arapeerreviewapp
+# peerapp
 
 Run `npm start`, or `npm run dev` to restart on file changes.
 

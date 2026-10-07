@@ -1,1 +1,1 @@
-document.getElementById('status').textContent = 'Hello from arapeerreviewapp';
+document.getElementById('status').textContent = 'Hello from peerapp';
