@@ -2,7 +2,8 @@ import { driveConfigured, postToDrive } from "./drive.js";
 import { formatProcedureLine } from "./procedure-times.js";
 import { mountPrep } from "./prep.js";
 
-const PASSWORD_KEY = "peerapp-admin-password";
+const TOKEN_KEY = "peerapp-admin-token";
+const OLD_PASSWORD_KEY = "peerapp-admin-password";
 
 const configNote = document.querySelector("#admin-config");
 const loginForm = document.querySelector("#admin-login");
@@ -17,7 +18,7 @@ const reviewsPanel = document.querySelector("#reviews-panel");
 const submissionsPanel = document.querySelector("#submissions-panel");
 const submissionFilter = document.querySelector("#submission-filter");
 
-let adminPassword = "";
+let adminToken = "";
 let submissions = [];
 let selectedId = "";
 let submissionFilterValue = "all";
@@ -216,7 +217,7 @@ function applyDashboard(data) {
 
 async function loadDashboard() {
   showMessage(boardMessage, "");
-  const data = await postToDrive({ action: "dashboard", password: adminPassword });
+  const data = await postToDrive({ action: "dashboard", token: adminToken });
   applyDashboard(data);
 }
 
@@ -231,7 +232,7 @@ async function openSubmission(summary) {
   try {
     const data = await postToDrive({
       action: "getSubmission",
-      password: adminPassword,
+      token: adminToken,
       id: summary.id,
     });
     if (selectedId !== summary.id) return;
@@ -251,17 +252,20 @@ async function openSubmission(summary) {
 }
 
 async function unlock(password) {
-  adminPassword = password;
   unlockButton.disabled = true;
   showMessage(loginMessage, "");
   try {
+    const data = await postToDrive({ action: "unlock", password });
+    adminToken = data.token || "";
+    if (adminToken.length < 32) throw new Error("Could not unlock.");
+    sessionStorage.setItem(TOKEN_KEY, adminToken);
+    passwordInput.value = "";
     await loadDashboard();
-    sessionStorage.setItem(PASSWORD_KEY, password);
     showBoard();
     showTab("reviews");
   } catch (err) {
-    adminPassword = "";
-    sessionStorage.removeItem(PASSWORD_KEY);
+    adminToken = "";
+    sessionStorage.removeItem(TOKEN_KEY);
     showLogin();
     showMessage(loginMessage, err.message || "Could not unlock.", "error");
   } finally {
@@ -270,21 +274,27 @@ async function unlock(password) {
 }
 
 function lock() {
-  adminPassword = "";
+  const token = adminToken;
+  adminToken = "";
   submissions = [];
   selectedId = "";
-  sessionStorage.removeItem(PASSWORD_KEY);
+  sessionStorage.removeItem(TOKEN_KEY);
+  sessionStorage.removeItem(OLD_PASSWORD_KEY);
   passwordInput.value = "";
   list.replaceChildren();
   resetDetail();
   showMessage(boardMessage, "");
   showLogin();
+  if (token) {
+    postToDrive({ action: "lock", token }).catch(() => {});
+  }
 }
 
 function isAuthFailure(message) {
   return message === "Wrong password"
     || message === "Too many attempts, try again later"
-    || message === "Admin password is not set";
+    || message === "Admin password is not set"
+    || message === "Admin session expired. Unlock again.";
 }
 
 async function deleteSubmission(submission) {
@@ -293,7 +303,7 @@ async function deleteSubmission(submission) {
 
   showMessage(boardMessage, "");
   try {
-    await postToDrive({ action: "delete", password: adminPassword, id: submission.id });
+    await postToDrive({ action: "delete", token: adminToken, id: submission.id });
     submissions = submissions.filter((item) => item.id !== submission.id);
     if (selectedId === submission.id) {
       selectedId = "";
@@ -350,7 +360,7 @@ if (!driveConfigured()) {
   });
 
   prep = mountPrep(reviewsPanel, {
-    getPassword: () => adminPassword,
+    getToken: () => adminToken,
     isAuthFailure,
     onAuthFailure(message) {
       lock();
@@ -359,9 +369,16 @@ if (!driveConfigured()) {
     onReviews: fillReviewFilter,
   });
 
-  const saved = sessionStorage.getItem(PASSWORD_KEY);
-  if (saved) {
-    passwordInput.value = saved;
-    unlock(saved);
+  sessionStorage.removeItem(OLD_PASSWORD_KEY);
+  const saved = sessionStorage.getItem(TOKEN_KEY);
+  if (saved && saved.length >= 32) {
+    adminToken = saved;
+    loadDashboard().then(() => {
+      showBoard();
+      showTab("reviews");
+    }).catch((err) => {
+      lock();
+      showMessage(loginMessage, err.message || "Admin session expired. Unlock again.", "error");
+    });
   }
 }
