@@ -554,3 +554,209 @@ body.admin-body {
     grid-template-columns: 1fr;
   }
 }
+
+.field.is-active {
+  outline: 2px solid var(--accent);
+  background: var(--accent-soft);
+  border-radius: 10px;
+  padding: 0.45rem;
+}
+
+.form-header .review-banner {
+  margin: 0 0 1rem;
+  color: var(--accent-dark);
+  font-weight: 600;
+}
+
+#pdf-panel.is-review .pdf-empty,
+#pdf-panel.is-review .pdf-viewer,
+#pdf-panel.is-review .pdf-overlay,
+#pdf-panel.is-review .pdf-message {
+  display: none !important;
+}
+
+#pdf-panel.is-review #review-view:not([hidden]) {
+  display: flex;
+}
+
+.reference-view:not([hidden]) {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+  height: 100%;
+}
+
+.reference-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.45rem 0.65rem;
+  border-bottom: 1px solid var(--line);
+  background: #f8fbfc;
+}
+
+.reference-label {
+  margin: 0;
+  color: var(--ink);
+  font-size: 0.92rem;
+  font-weight: 600;
+  text-align: center;
+}
+
+.reference-stage {
+  flex: 1;
+  min-height: 12rem;
+  overflow: auto;
+  background: #4d5966;
+  outline: none;
+}
+
+.reference-stage canvas {
+  display: block;
+  margin: 0.75rem auto;
+  background: #fff;
+}
+
+.reference-note,
+.reference-progress {
+  margin: 0;
+  padding: 1.5rem 1rem;
+  color: #fff;
+  text-align: center;
+}
+
+.reference-progress progress {
+  width: min(16rem, 80%);
+}
+
+.admin-tabs {
+  display: flex;
+  gap: 0.4rem;
+  margin-top: 1rem;
+}
+
+.admin-tab {
+  font: inherit;
+  border: 1px solid var(--line);
+  background: #fff;
+  color: var(--ink);
+  border-radius: 999px;
+  padding: 0.35rem 0.8rem;
+  cursor: pointer;
+}
+
+.admin-tab.is-selected {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+
+.prep-filter {
+  max-width: 22rem;
+  margin-top: 1rem;
+}
+
+.prep-review {
+  padding: 0.75rem 0.85rem;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: #fff;
+}
+
+.prep-review-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin-top: 0.55rem;
+}
+
+.prep-editor-wrap {
+  margin-top: 1rem;
+}
+
+.prep-count-field {
+  max-width: 12rem;
+}
+
+.prep-drop {
+  position: relative;
+  margin: 0 0 1rem;
+  padding: 1rem;
+  border: 2px dashed #9eb0c2;
+  border-radius: 12px;
+  background: #fff;
+  text-align: center;
+}
+
+.prep-drop.is-dragover {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  box-shadow: inset 0 0 0 3px var(--accent);
+}
+
+.prep-columns {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(16rem, 24rem);
+  gap: 1rem;
+  align-items: start;
+}
+
+.prep-questions {
+  min-width: 0;
+}
+
+.prep-question {
+  display: grid;
+  gap: 0.35rem;
+  margin: 0 0 0.75rem;
+  padding: 0.55rem 0.65rem;
+  border: 1px solid transparent;
+  border-radius: 10px;
+}
+
+.prep-question.is-active {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.prep-question-label {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+}
+
+.prep-page-count {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.prep-page-count.is-error {
+  color: #8a3324;
+}
+
+.prep-link {
+  margin-top: 1rem;
+  padding: 0.85rem 1rem;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: #fff;
+}
+
+.prep-link-url {
+  margin: 0.35rem 0 0.7rem;
+  word-break: break-all;
+}
+
+@media (max-width: 800px) {
+  .prep-columns {
+    grid-template-columns: 1fr;
+  }
+}

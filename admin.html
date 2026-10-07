@@ -14,7 +14,7 @@
         <h1>Submissions</h1>
         <a class="admin-link" href="index.html">Back to the form</a>
       </div>
-      <p>Saved copies from Google Drive.</p>
+      <p>Prepare a review, then read the answers that come back.</p>
     </header>
 
     <p id="admin-config" class="load-note" hidden>Not configured yet.</p>
@@ -33,13 +33,27 @@
         <button type="button" class="button button-secondary" id="admin-refresh">Refresh</button>
         <button type="button" class="button button-secondary" id="admin-lock">Lock</button>
       </div>
+      <div class="admin-tabs">
+        <button type="button" class="admin-tab is-selected" id="tab-reviews">Reviews</button>
+        <button type="button" class="admin-tab" id="tab-submissions">Submissions</button>
+      </div>
       <p id="admin-board-message" class="submit-status" role="status" hidden></p>
+      <section id="reviews-panel"></section>
+      <section id="submissions-panel" hidden>
+      <label class="field prep-filter">
+        <span class="field-label">Show</span>
+        <select id="submission-filter">
+          <option value="all">All submissions</option>
+          <option value="none">No review</option>
+        </select>
+      </label>
       <div class="admin-board-grid">
         <ul id="admin-list" class="admin-list"></ul>
         <article id="admin-detail" class="admin-detail">
           <p class="admin-placeholder">Select a submission.</p>
         </article>
       </div>
+      </section>
     </section>
   </main>
   <script type="module" src="src/admin.js"></script>
