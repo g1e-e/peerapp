@@ -319,3 +319,140 @@ form.addEventListener("input", saveAnswers);
 form.addEventListener("change", saveAnswers);
 form.addEventListener("submit", onSubmit);
 clearButton.addEventListener("click", onClear);
+
+// Reference PDF. The file is shown with the browser's own viewer.
+// It stays in this tab only: nothing is uploaded, and a reload clears it.
+
+const pdfPanel = document.querySelector("#pdf-panel");
+const pdfEmpty = document.querySelector("#pdf-empty");
+const pdfViewer = document.querySelector("#pdf-viewer");
+const pdfFrame = document.querySelector("#pdf-frame");
+const pdfFilename = document.querySelector("#pdf-filename");
+const pdfMessage = document.querySelector("#pdf-message");
+const pdfOverlay = document.querySelector("#pdf-overlay");
+const pdfInput = document.querySelector("#pdf-input");
+
+let pdfUrl = "";
+
+function isPdf(file) {
+  if (!file) return false;
+  if (file.type === "application/pdf") return true;
+  return file.name.toLowerCase().endsWith(".pdf");
+}
+
+function showPdfMessage(text) {
+  pdfMessage.hidden = false;
+  pdfMessage.textContent = text;
+}
+
+function clearPdfMessage() {
+  pdfMessage.hidden = true;
+  pdfMessage.textContent = "";
+}
+
+function loadPdf(file) {
+  if (!isPdf(file)) {
+    showPdfMessage("Please choose a PDF file.");
+    return;
+  }
+
+  const blob = file.type === "application/pdf"
+    ? file
+    : new File([file], file.name, { type: "application/pdf" });
+  const nextUrl = URL.createObjectURL(blob);
+  const previousUrl = pdfUrl;
+
+  pdfUrl = nextUrl;
+  pdfFrame.src = nextUrl;
+  pdfFilename.textContent = file.name;
+  pdfEmpty.hidden = true;
+  pdfViewer.hidden = false;
+  clearPdfMessage();
+
+  if (previousUrl) URL.revokeObjectURL(previousUrl);
+}
+
+function removePdf() {
+  if (pdfUrl) URL.revokeObjectURL(pdfUrl);
+  pdfUrl = "";
+  pdfFrame.src = "about:blank";
+  pdfFilename.textContent = "";
+  pdfViewer.hidden = true;
+  pdfEmpty.hidden = false;
+  clearPdfMessage();
+}
+
+function openPdfPicker() {
+  pdfInput.click();
+}
+
+function draggingFiles(event) {
+  const types = event.dataTransfer ? event.dataTransfer.types : [];
+  return [...types].includes("Files");
+}
+
+function endFileDrag() {
+  pdfPanel.classList.remove("is-dragover");
+  pdfOverlay.hidden = true;
+}
+
+// Keep a dropped file from opening as a new page, anywhere on this page.
+window.addEventListener("dragover", (event) => {
+  event.preventDefault();
+}, true);
+
+window.addEventListener("drop", (event) => {
+  event.preventDefault();
+  endFileDrag();
+});
+
+window.addEventListener("dragenter", (event) => {
+  if (!draggingFiles(event)) return;
+  // Cover the viewer so the drop lands on this page, not inside the PDF frame.
+  pdfOverlay.hidden = false;
+});
+
+window.addEventListener("dragleave", (event) => {
+  const leftThePage = !event.relatedTarget
+    && (event.target === document.documentElement || event.target === document.body);
+  if (!leftThePage) return;
+  endFileDrag();
+});
+
+pdfPanel.addEventListener("dragenter", (event) => {
+  event.preventDefault();
+  if (!draggingFiles(event)) return;
+  pdfPanel.classList.add("is-dragover");
+});
+
+pdfPanel.addEventListener("dragover", (event) => {
+  event.preventDefault();
+  if (event.dataTransfer) event.dataTransfer.dropEffect = "copy";
+});
+
+pdfPanel.addEventListener("dragleave", (event) => {
+  // Moving between pieces of the panel still counts as inside it.
+  if (pdfPanel.contains(event.relatedTarget)) return;
+  pdfPanel.classList.remove("is-dragover");
+});
+
+pdfPanel.addEventListener("drop", (event) => {
+  event.preventDefault();
+  endFileDrag();
+  const file = event.dataTransfer.files[0];
+  if (!file) {
+    showPdfMessage("Please choose a PDF file.");
+    return;
+  }
+  loadPdf(file);
+});
+
+document.querySelector("#pdf-choose").addEventListener("click", openPdfPicker);
+document.querySelector("#pdf-replace").addEventListener("click", openPdfPicker);
+document.querySelector("#pdf-remove").addEventListener("click", removePdf);
+
+pdfInput.addEventListener("change", () => {
+  const file = pdfInput.files[0];
+  pdfInput.value = "";
+  if (file) loadPdf(file);
+});

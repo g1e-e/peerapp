@@ -22,13 +22,30 @@
       <section id="summary" class="summary" hidden></section>
     </section>
 
-    <aside class="pane pane-pdf" aria-label="Reference PDF">
-      <div class="pdf-frame">
-        <div class="pdf-empty">
+    <aside class="pane pane-pdf" id="pdf-panel" aria-label="Reference PDF">
+      <div class="pdf-frame" id="pdf-drop">
+        <p class="pdf-message" id="pdf-message" role="alert" hidden></p>
+        <div class="pdf-empty" id="pdf-empty">
           <h2>Reference PDF</h2>
-          <p>The reference document will appear here.</p>
+          <p>Drop a PDF here, or choose a file.</p>
+          <p class="pdf-hint">The file stays in this browser. Nothing is uploaded.</p>
+          <button type="button" class="button button-primary" id="pdf-choose">Choose PDF</button>
+        </div>
+        <div class="pdf-viewer" id="pdf-viewer" hidden>
+          <div class="pdf-toolbar">
+            <p class="pdf-filename" id="pdf-filename"></p>
+            <div class="pdf-toolbar-actions">
+              <button type="button" class="button button-secondary" id="pdf-replace">Replace</button>
+              <button type="button" class="button button-secondary" id="pdf-remove">Remove</button>
+            </div>
+          </div>
+          <iframe id="pdf-frame" title="Reference PDF"></iframe>
         </div>
       </div>
+      <div class="pdf-overlay" id="pdf-overlay" hidden>
+        <p>Drop PDF here</p>
+      </div>
+      <input class="pdf-input" id="pdf-input" type="file" accept="application/pdf,.pdf" tabindex="-1" aria-hidden="true">
     </aside>
   </div>
   <script type="module" src="src/app.js"></script>
