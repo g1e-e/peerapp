@@ -323,6 +323,8 @@ function handleSaveReview(body) {
 
   var pages = sanitizePages(review.pages, pageCount);
   if (pages.error) return { ok: false, error: pages.error };
+  var source = sanitizeSourcePages(review.sourcePages, pageCount);
+  if (source.error) return { ok: false, error: source.error };
 
   var existing = loadReview(review.id);
   var pdfChunks;
@@ -359,6 +361,7 @@ function handleSaveReview(body) {
     pageCount: pageCount,
     incidentCount: incidentCount,
     pages: pages.value,
+    sourcePages: source.value || (existing && !(review.pdfChunks && review.pdfChunks.length) ? existing.sourcePages || null : null),
     procedureTimes: cleanProcedureTimes(review.procedureTimes),
     accessCode: access.code,
     accessCodeSalt: access.salt,
@@ -428,6 +431,7 @@ function publicReview(review) {
     pageCount: review.pageCount,
     incidentCount: clampCount(review.incidentCount) || 0,
     pages: review.pages || {},
+    sourcePages: sourcePagesForClient(review.sourcePages),
     pdfChunkCount: review.pdfChunks ? review.pdfChunks.length : 0,
     procedureTimes: cleanProcedureTimes(review.procedureTimes),
   };
@@ -580,6 +584,31 @@ function clampCount(value) {
   number = Math.floor(number);
   if (number < 0 || number > 10) return null;
   return number;
+}
+
+function sanitizeSourcePages(sourcePages, pageCount) {
+  if (!sourcePages || !sourcePages.length) return { value: null };
+  if (sourcePages.length !== pageCount) {
+    return { error: "The saved page list does not match the PDF." };
+  }
+  var previous = 0;
+  var clean = [];
+  for (var i = 0; i < sourcePages.length; i++) {
+    var page = Number(sourcePages[i]);
+    if (!isFinite(page) || Math.floor(page) !== page || page <= previous) {
+      return { error: "The saved page list does not match the PDF." };
+    }
+    previous = page;
+    clean.push(page);
+  }
+  return { value: clean };
+}
+
+function sourcePagesForClient(sourcePages) {
+  if (!sourcePages || !sourcePages.length) return [];
+  var pages = [];
+  for (var i = 0; i < sourcePages.length; i++) pages.push(Number(sourcePages[i]));
+  return pages;
 }
 
 function sanitizePages(pages, pageCount) {

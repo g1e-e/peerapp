@@ -14,6 +14,7 @@ import { createPagePicker } from "./page-picker.js";
 import { openPdf } from "./pdfjs.js";
 import { buildSegments, clampIncidentCount, MAX_INCIDENTS } from "./questions.js";
 import { downloadReviewPdf, uploadPdf } from "./review-transfer.js";
+import { copyPdfPages } from "./trim-pdf.js";
 
 export function mountPrep(root, options) {
   root.replaceChildren();
@@ -128,6 +129,8 @@ export function mountPrep(root, options) {
       timeFound: null,
       accessCode: "",
       closed: false,
+      pdfBytes: null,
+      loadedSourcePages: null,
     };
   }
 
@@ -154,6 +157,48 @@ export function mountPrep(root, options) {
     badge.className = hasCode ? "access-badge is-protected" : "access-badge is-open";
     badge.textContent = hasCode ? "Protected" : "No access code";
     return badge;
+  }
+
+  function assignedOriginals(pages) {
+    const found = new Set();
+    for (const list of Object.values(pages || {})) {
+      for (const page of list || []) found.add(Number(page));
+    }
+    return [...found].sort((a, b) => a - b);
+  }
+
+  function samePageList(left, right) {
+    if (!left || !right || left.length !== right.length) return false;
+    for (let index = 0; index < left.length; index += 1) {
+      if (Number(left[index]) !== Number(right[index])) return false;
+    }
+    return true;
+  }
+
+  function pdfPageFor(original) {
+    if (!state.loadedSourcePages) return Number(original);
+    const index = state.loadedSourcePages.indexOf(Number(original));
+    return index < 0 ? 0 : index + 1;
+  }
+
+  function originalForPdfPage(pdfPage) {
+    if (!pdfPage) return 0;
+    if (!state.loadedSourcePages) return pdfPage;
+    return state.loadedSourcePages[pdfPage - 1] || pdfPage;
+  }
+
+  function toEditorPages(pages, sourcePages) {
+    if (!sourcePages || !sourcePages.length) return { ...(pages || {}) };
+    const converted = {};
+    for (const [id, list] of Object.entries(pages || {})) {
+      const originals = [];
+      for (const index of list || []) {
+        const original = sourcePages[Number(index) - 1];
+        if (original) originals.push(Number(original));
+      }
+      if (originals.length) converted[id] = originals;
+    }
+    return converted;
   }
 
   function setReviews(next) {
@@ -485,8 +530,13 @@ export function mountPrep(root, options) {
       paintProcedureTimes();
       return;
     }
-    const found = await findProcedureTimes(pdfDoc, pages);
-    state.timeFound = found;
+    const pdfPages = pages.map((page) => pdfPageFor(page)).filter((page) => page > 0);
+    const found = await findProcedureTimes(pdfDoc, pdfPages);
+    state.timeFound = {
+      ...found,
+      startPage: originalForPdfPage(found.startPage),
+      endPage: originalForPdfPage(found.endPage),
+    };
     if (!keepOverrides) {
       state.procedureTimes = {
         start: found.start || "",
@@ -555,14 +605,17 @@ export function mountPrep(root, options) {
       return;
     }
     showStatus("");
+    let bytes;
     try {
-      const bytes = new Uint8Array(await file.arrayBuffer());
+      bytes = new Uint8Array(await file.arrayBuffer());
       pdfDoc = await openPdf(bytes);
     } catch {
       showStatus("Could not read that PDF.", "error");
       return;
     }
     pendingFile = file;
+    state.pdfBytes = bytes;
+    state.loadedSourcePages = null;
     state.pageCount = pdfDoc.numPages;
     picker.setPdf(pdfDoc);
     label.textContent = file.name;
@@ -638,19 +691,24 @@ export function mountPrep(root, options) {
       return;
     }
 
+    const sourcePages = Array.isArray(full.sourcePages) && full.sourcePages.length
+      ? full.sourcePages.map((page) => Number(page))
+      : null;
     state = {
       id: full.id,
       name: full.name || "",
       incidentCount: clampIncidentCount(full.incidentCount),
       hasPdf: true,
-      pageCount: Number(full.pageCount) || 0,
-      pages: { ...(full.pages || {}) },
+      pageCount: sourcePages ? sourcePages.length : Number(full.pageCount) || 0,
+      pages: toEditorPages(full.pages, sourcePages),
       activeId: "",
       savedId: full.id,
       procedureTimes: normalizeProcedureTimes(full.procedureTimes),
       timeFound: null,
       accessCode: full.accessCode || "",
       closed: !!full.closed,
+      pdfBytes: null,
+      loadedSourcePages: sourcePages,
     };
     pendingFile = null;
     pdfDoc = null;
@@ -660,8 +718,9 @@ export function mountPrep(root, options) {
       const bytes = await downloadReviewPdf(full.id, full.pdfChunkCount, (done, total) => {
         picker.showProgress(`Loading reference PDF… part ${done} of ${total}`);
       }, { token: token() });
+      state.pdfBytes = bytes;
       pdfDoc = await openPdf(bytes);
-      picker.setPdf(pdfDoc);
+      picker.setPdf(pdfDoc, sourcePages);
       picker.showMessage("Choose a question to select pages.");
       await refreshProcedureTimes(state.pages[PROCEDURE_QUESTION_ID] || [], true);
     } catch (err) {
@@ -749,15 +808,33 @@ export function mountPrep(root, options) {
       const ok = window.confirm("Without an access code, anyone with this link can see the PDF pages. Save without a code?");
       if (!ok) return;
     }
+    const sourcePages = assignedOriginals(collected.pages);
+    if (!sourcePages.length) {
+      showStatus("Assign at least one page before saving.", "error");
+      return;
+    }
+    for (const original of sourcePages) {
+      if (!pdfPageFor(original)) {
+        showStatus(`Page ${original} is not in this PDF. Upload the original file to add it.`, "error");
+        return;
+      }
+    }
+    const storedPages = {};
+    const place = new Map(sourcePages.map((original, index) => [original, index + 1]));
+    for (const [id, list] of Object.entries(collected.pages)) {
+      storedPages[id] = list.map((page) => place.get(Number(page)));
+    }
+    const unchangedTrim = samePageList(state.loadedSourcePages, sourcePages);
 
     button.disabled = true;
     try {
       const payload = {
         id: state.id,
         name,
-        pageCount: state.pageCount,
+        pageCount: sourcePages.length,
         incidentCount: state.incidentCount,
-        pages: collected.pages,
+        pages: storedPages,
+        sourcePages,
         procedureTimes: {
           start: state.procedureTimes.start || "",
           end: state.procedureTimes.end || "",
@@ -765,16 +842,31 @@ export function mountPrep(root, options) {
         accessCode,
         closed: !!state.closed,
       };
-      if (pendingFile) {
-        const uploaded = await uploadPdf(pendingFile, token(), (done, total) => {
+      if (!unchangedTrim) {
+        if (!state.pdfBytes) {
+          showStatus("The reference PDF is not loaded yet.", "error");
+          return;
+        }
+        showStatus("Preparing the selected pages...", "notice");
+        let trimmed;
+        try {
+          const indexes = sourcePages.map((original) => pdfPageFor(original) - 1);
+          trimmed = await copyPdfPages(state.pdfBytes, indexes);
+        } catch {
+          showStatus("Could not copy the selected pages.", "error");
+          return;
+        }
+        const file = new File([trimmed], "review.pdf", { type: "application/pdf" });
+        const uploaded = await uploadPdf(file, token(), (done, total) => {
           showStatus(`Uploading ${done} of ${total}...`, "notice");
         });
         payload.pdfChunks = uploaded.pdfChunks;
         payload.folderId = uploaded.folderId;
         payload.pdfSize = uploaded.pdfSize;
-        pendingFile = null;
-        state.hasPdf = true;
+        payload._trimmedBytes = trimmed;
       }
+      const trimmedBytes = payload._trimmedBytes;
+      delete payload._trimmedBytes;
       showStatus("Saving...", "notice");
       const saved = await postToDrive({
         action: "saveReview",
@@ -785,6 +877,17 @@ export function mountPrep(root, options) {
       const codeInput = editor.querySelector("#prep-access-code");
       if (codeInput) codeInput.value = accessCode;
       paintAccessBadge();
+      if (trimmedBytes) {
+        pdfDoc = await openPdf(trimmedBytes);
+        state.pdfBytes = trimmedBytes;
+        state.loadedSourcePages = sourcePages.slice();
+        state.pageCount = sourcePages.length;
+        state.hasPdf = true;
+        pendingFile = null;
+        picker.setPdf(pdfDoc, sourcePages);
+        const dropText = editor.querySelector(".prep-drop p");
+        if (dropText) dropText.textContent = pdfDropLabel();
+      }
       state.pages = collected.pages;
       state.savedId = state.id;
       const linkBox = editor.querySelector(".prep-link");

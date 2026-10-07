@@ -28,6 +28,7 @@ export function createReferenceView(container) {
   let pdf = null;
   let pages = [];
   let generation = 0;
+  let labelFor = (pageNumber) => pageNumber;
 
   const observer = new IntersectionObserver((entries) => {
     for (const entry of entries) {
@@ -64,7 +65,7 @@ export function createReferenceView(container) {
       block.dataset.width = String(width);
       const label = document.createElement("p");
       label.className = "reference-page-label";
-      label.textContent = `PDF page ${pageNumber}`;
+      label.textContent = `Page ${labelFor(pageNumber)}`;
       const slot = document.createElement("div");
       slot.className = "reference-page-slot";
       block.append(label, slot);
@@ -136,6 +137,9 @@ export function createReferenceView(container) {
       cache.clear();
       generation += 1;
       if (pages.length) buildStack();
+    },
+    setLabelFor(fn) {
+      labelFor = typeof fn === "function" ? fn : (pageNumber) => pageNumber;
     },
     showProgress(text, ratio) {
       sticky.hidden = true;
