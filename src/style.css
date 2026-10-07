@@ -56,6 +56,15 @@ body {
   color: var(--muted);
 }
 
+.load-note {
+  margin: 0 0 1rem;
+  padding: 0.8rem 1rem;
+  border: 1px solid #e2c36a;
+  border-radius: 10px;
+  background: #fff8e6;
+  color: var(--ink);
+}
+
 .segment {
   background: var(--card);
   border: 1px solid var(--line);

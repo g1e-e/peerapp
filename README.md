@@ -1,6 +1,14 @@
 # Peer Review App
 
-A static peer review form. GitHub Pages serves this folder directly from `main` — there is no build step. Open `index.html` in a browser, or serve the folder with any static file server.
+A static peer review form. GitHub Pages serves this folder directly from `main` — there is no build step.
+
+Opening `index.html` as a file shows the layout, but most browsers block the JavaScript modules, so the questions stay blank. Serve the folder instead:
+
+```
+python3 -m http.server
+```
+
+Then open `http://localhost:8000`. The published GitHub Pages site loads the form the same way.
 
 The page is split in two. The left side is the questionnaire. The right side is an empty panel reserved for a reference PDF. On a phone the two panels stack, with the questionnaire on top. Each panel scrolls on its own.
 
