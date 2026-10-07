@@ -1,7 +1,3 @@
-// Shared limits for sending a PDF through Apps Script in pieces.
-// Each chunk is about 5 MB of the file itself. Base64 makes the request a bit larger.
-// Apps Script cannot store a blob bigger than about 45 MB.
-
 export const CHUNK_BYTES = 5 * 1024 * 1024;
 export const MAX_PDF_BYTES = 45 * 1024 * 1024;
 

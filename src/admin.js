@@ -1,5 +1,3 @@
-// Password gate for the Drive submissions. The password stays in this tab.
-
 import { driveConfigured, postToDrive } from "./drive.js";
 import { mountPrep } from "./prep.js";
 

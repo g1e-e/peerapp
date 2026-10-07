@@ -1,6 +1,3 @@
-// Upload and download a review PDF in chunks.
-// The script keeps each chunk as its own file. This module does not merge them on the server.
-
 import { postToDrive } from "./drive.js";
 import {
   CHUNK_BYTES,

@@ -1,37 +1,3 @@
-// The peer review form.
-//
-// Edit this list to add, remove, or reword questions.
-// `segments` is the four sections that are always on the form.
-// Incident sections are not listed here. `incidentTemplate` is the one copy
-// of those fields. A review says how many incidents to show (0 to 10).
-// Each copy is titled "Peer Review - Incident 1", and so on.
-// Question ids inside a copy are prefixed, like incident1.patientName,
-// so two incidents never share an answer.
-//
-// Every question needs:
-//   id    — unique across the whole form (answers are saved under this id)
-//   label — the words shown next to the field
-//   type  — "text", "textarea", "date", "select", "rating", "yesNoNa", or "radio"
-//
-// A select question also needs options, for example:
-//   options: ["Open", "In Progress", "Completed"]
-//
-// A rating question is 1 to 5. Add min and max to use a different scale.
-//
-// A yesNoNa question shows three radio buttons on one row: Yes, No, and N/A.
-// A radio question is that same row, but you choose the labels:
-//   options: ["Difficult", "Average"]
-// The reviewer can pick only one. The choice is saved like any other answer.
-//
-// Optional:
-//   placeholder — gray hint text inside a text or textarea field
-//   note        — on a segment, a short line under the section title
-//   number      — shown in front of the label, like "1. "
-//   rows        — for a textarea, how many lines tall it starts (default 4)
-//   width       — "half" sits the field in a two-column row when the section
-//                 is wide (Patient name beside MRN, for example). Leave it off
-//                 for a full-width field. A narrow section stacks every field.
-
 export const segments = [
   {
     title: "Basic Details",
@@ -51,7 +17,6 @@ export const segments = [
         id: "status",
         label: "Status",
         type: "select",
-        // Change this list to edit the dropdown choices.
         options: ["Open", "In Progress", "Completed"],
       },
       {
@@ -171,8 +136,6 @@ export const segments = [
   },
 ];
 
-// One copy of the incident form. Do not add incident1 / incident2 by hand.
-// buildSegments() stamps on the number.
 export const incidentTemplate = {
   questions: [
     {

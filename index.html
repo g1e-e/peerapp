@@ -61,8 +61,6 @@
   </div>
   <script type="module" src="src/app.js"></script>
   <script>
-    // Runs after app.js. If the questions are missing, the page was almost
-    // certainly opened as a file, which blocks JavaScript modules.
     window.addEventListener("DOMContentLoaded", () => {
       const form = document.querySelector("#review-form");
       if (!form || form.childElementCount > 0) return;

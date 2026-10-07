@@ -1,6 +1,3 @@
-// Shows one assigned PDF page at a time on a canvas.
-// Used by the subject page and by Ara's prep preview.
-
 export function createReferenceView(container) {
   container.classList.add("reference-view");
   container.replaceChildren();
