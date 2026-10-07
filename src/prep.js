@@ -63,9 +63,12 @@ export function mountPrep(root, options) {
   }
 
   function showStatus(text, tone) {
-    status.hidden = !text;
-    status.textContent = text || "";
-    status.className = `submit-status${tone ? ` ${tone}` : ""}`;
+    for (const target of [status, editor.querySelector(".prep-save-status")]) {
+      if (!target) continue;
+      target.hidden = !text;
+      target.textContent = text || "";
+      target.className = `submit-status${tone ? ` ${tone}` : ""}${target === status ? "" : " prep-save-status"}`;
+    }
   }
 
   function authFailed(error) {
@@ -403,7 +406,10 @@ export function mountPrep(root, options) {
 
     const left = document.createElement("div");
     left.className = "prep-left";
-    left.append(head, questions, save, linkBox);
+    const saveStatus = document.createElement("p");
+    saveStatus.className = "submit-status prep-save-status";
+    saveStatus.hidden = true;
+    left.append(head, questions, save, saveStatus, linkBox);
     const right = document.createElement("div");
     right.className = "prep-right";
     right.append(pickerHost);
@@ -806,7 +812,10 @@ export function mountPrep(root, options) {
     const accessCode = groupCode(state.accessCode);
     if (!accessCode) {
       const ok = window.confirm("Without an access code, anyone with this link can see the PDF pages. Save without a code?");
-      if (!ok) return;
+      if (!ok) {
+        showStatus("Not saved. Add an access code, or confirm saving without one.", "error");
+        return;
+      }
     }
     const sourcePages = assignedOriginals(collected.pages);
     if (!sourcePages.length) {
