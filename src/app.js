@@ -1,6 +1,7 @@
 // Draws the form from src/questions.js, saves answers in this browser,
 // and shows a summary when the reviewer clicks Submit.
 
+import { driveConfigured, postToDrive } from "./drive.js";
 import { segments } from "./questions.js";
 
 const STORAGE_KEY = "peer-review-answers";
@@ -8,6 +9,8 @@ const STORAGE_KEY = "peer-review-answers";
 const form = document.querySelector("#review-form");
 const summary = document.querySelector("#summary");
 const clearButton = document.querySelector("#clear-button");
+const submitButton = document.querySelector("#submit-button");
+const submitStatus = document.querySelector("#submit-status");
 
 // question id -> the input, textarea, select, or rating group
 const controls = new Map();
@@ -308,11 +311,56 @@ async function copySummary(text, button) {
   }, 2000);
 }
 
-function onSubmit(event) {
+function answersForDrive(answers) {
+  return segments.map((segment) => ({
+    title: segment.title,
+    fields: segment.questions.map((question) => ({
+      id: question.id,
+      label: questionText(question),
+      value: answers[question.id] == null ? "" : String(answers[question.id]),
+    })),
+  }));
+}
+
+function showSubmitStatus(message, tone) {
+  submitStatus.hidden = false;
+  submitStatus.textContent = message;
+  submitStatus.className = `submit-status ${tone}`;
+}
+
+function hideSubmitStatus() {
+  submitStatus.hidden = true;
+  submitStatus.textContent = "";
+  submitStatus.className = "submit-status";
+}
+
+async function onSubmit(event) {
   event.preventDefault();
   const answers = collectAnswers();
   saveAnswers();
   showSummary(answers);
+
+  if (!driveConfigured()) {
+    showSubmitStatus("Saving to Drive is not set up yet.", "notice");
+    return;
+  }
+
+  submitButton.disabled = true;
+  const label = submitButton.textContent;
+  submitButton.textContent = "Submitting…";
+  try {
+    await postToDrive({
+      action: "submit",
+      answers: answersForDrive(answers),
+    });
+    showSubmitStatus("Submitted", "success");
+  } catch (err) {
+    showSubmitStatus(err.message || "Could not save to Drive.", "error");
+  } finally {
+    submitButton.disabled = false;
+    submitButton.textContent = label;
+    submitStatus.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  }
 }
 
 function onClear() {
@@ -325,6 +373,7 @@ function onClear() {
   renderForm({});
   summary.hidden = true;
   summary.replaceChildren();
+  hideSubmitStatus();
 }
 
 renderForm(loadAnswers());
