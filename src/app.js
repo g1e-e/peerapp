@@ -164,9 +164,9 @@ function renderQuestion(question, value) {
       const info = document.createElement("p");
       info.className = "procedure-times";
       info.textContent = line;
-      const legend = field.querySelector("legend");
-      if (legend) legend.after(info);
-      else field.append(info);
+      const caption = field.querySelector("legend") || field.querySelector(".field-label");
+      if (caption) caption.after(info);
+      else field.prepend(info);
     }
   }
   return field;

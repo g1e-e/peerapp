@@ -835,10 +835,7 @@ export function mountPrep(root, options) {
         incidentCount: state.incidentCount,
         pages: storedPages,
         sourcePages,
-        procedureTimes: {
-          start: state.procedureTimes.start || "",
-          end: state.procedureTimes.end || "",
-        },
+        procedureTimes: normalizeProcedureTimes(state.procedureTimes),
         accessCode,
         closed: !!state.closed,
       };
