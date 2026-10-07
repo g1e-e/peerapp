@@ -38,7 +38,7 @@ function readControl(question) {
   const control = controls.get(question.id);
   if (!control) return "";
 
-  if (question.type === "rating") {
+  if (question.type === "rating" || question.type === "yesNoNa") {
     const checked = control.querySelector("input:checked");
     return checked ? checked.value : "";
   }
@@ -90,6 +90,8 @@ function renderQuestion(question, value) {
       return renderSelect(question, value);
     case "rating":
       return renderRating(question, value);
+    case "yesNoNa":
+      return renderYesNoNa(question, value);
     case "date":
       return renderTextLike(question, value, "date");
     default:
@@ -163,6 +165,42 @@ function renderSelect(question, value) {
   return label;
 }
 
+function questionText(question) {
+  if (question.number == null || question.number === "") return question.label;
+  return `${question.number}. ${question.label}`;
+}
+
+function renderYesNoNa(question, value) {
+  const fieldset = document.createElement("fieldset");
+  fieldset.className = "field";
+
+  const legend = document.createElement("legend");
+  legend.textContent = questionText(question);
+  fieldset.append(legend);
+
+  const row = document.createElement("div");
+  row.className = "yes-no-na";
+
+  for (const choice of ["Yes", "No", "N/A"]) {
+    const choiceLabel = document.createElement("label");
+    const input = document.createElement("input");
+    input.type = "radio";
+    input.name = question.id;
+    input.value = choice;
+    input.checked = String(value) === choice;
+
+    const text = document.createElement("span");
+    text.textContent = choice;
+
+    choiceLabel.append(input, text);
+    row.append(choiceLabel);
+  }
+
+  fieldset.append(row);
+  controls.set(question.id, fieldset);
+  return fieldset;
+}
+
 function renderRating(question, value) {
   const min = Number.isFinite(question.min) ? question.min : 1;
   const max = Number.isFinite(question.max) ? question.max : 5;
@@ -207,7 +245,7 @@ function formatSummary(answers) {
     for (const question of segment.questions) {
       const raw = answers[question.id];
       const text = raw == null ? "" : String(raw).trim();
-      lines.push(`${question.label}: ${text || "(blank)"}`);
+      lines.push(`${questionText(question)}: ${text || "(blank)"}`);
     }
     blocks.push(lines.join("\n"));
   }

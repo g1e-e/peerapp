@@ -30,11 +30,13 @@ Each question needs:
 
 - `id` — a unique name. Answers are saved under this id, so do not reuse one (the two incident sections use ids like `incident1Date` and `incident2Date` so they stay separate)
 - `label` — the text shown on the form
-- `type` — one of `text`, `textarea`, `date`, `select`, or `rating`
+- `type` — one of `text`, `textarea`, `date`, `select`, `rating`, or `yesNoNa`
 
 For a dropdown, set `type` to `"select"` and add `options`, for example `["Open", "In Progress", "Completed"]`.
 
 A `rating` question is 1 to 5. Set `min` and `max` on that question for a different scale.
+
+A `yesNoNa` question shows Yes, No, and N/A as radio buttons on one row. Set `number` to show that number in front of the label.
 
 You can add a `placeholder` string for hint text inside a text field, and a `note` string on a segment for a short line under its title.
 
