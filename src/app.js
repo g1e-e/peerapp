@@ -38,7 +38,7 @@ function readControl(question) {
   const control = controls.get(question.id);
   if (!control) return "";
 
-  if (question.type === "rating" || question.type === "yesNoNa") {
+  if (question.type === "rating" || question.type === "yesNoNa" || question.type === "radio") {
     const checked = control.querySelector("input:checked");
     return checked ? checked.value : "";
   }
@@ -91,7 +91,8 @@ function renderQuestion(question, value) {
     case "rating":
       return renderRating(question, value);
     case "yesNoNa":
-      return renderYesNoNa(question, value);
+    case "radio":
+      return renderRadio(question, value);
     case "date":
       return renderTextLike(question, value, "date");
     default:
@@ -126,7 +127,7 @@ function renderTextarea(question, value) {
   caption.textContent = question.label;
 
   const textarea = document.createElement("textarea");
-  textarea.rows = 4;
+  textarea.rows = Number.isFinite(question.rows) ? question.rows : 4;
   if (question.placeholder) textarea.placeholder = question.placeholder;
   textarea.value = value == null ? "" : String(value);
 
@@ -170,7 +171,11 @@ function questionText(question) {
   return `${question.number}. ${question.label}`;
 }
 
-function renderYesNoNa(question, value) {
+function renderRadio(question, value) {
+  const choices = Array.isArray(question.options) && question.options.length > 0
+    ? question.options
+    : ["Yes", "No", "N/A"];
+
   const fieldset = document.createElement("fieldset");
   fieldset.className = "field";
 
@@ -181,7 +186,7 @@ function renderYesNoNa(question, value) {
   const row = document.createElement("div");
   row.className = "yes-no-na";
 
-  for (const choice of ["Yes", "No", "N/A"]) {
+  for (const choice of choices) {
     const choiceLabel = document.createElement("label");
     const input = document.createElement("input");
     input.type = "radio";

@@ -6,7 +6,7 @@
 // Every question needs:
 //   id    — unique across the whole form (answers are saved under this id)
 //   label — the words shown next to the field
-//   type  — "text", "textarea", "date", "select", "rating", or "yesNoNa"
+//   type  — "text", "textarea", "date", "select", "rating", "yesNoNa", or "radio"
 //
 // A select question also needs options, for example:
 //   options: ["Open", "In Progress", "Completed"]
@@ -14,12 +14,15 @@
 // A rating question is 1 to 5. Add min and max to use a different scale.
 //
 // A yesNoNa question shows three radio buttons on one row: Yes, No, and N/A.
+// A radio question is that same row, but you choose the labels:
+//   options: ["Difficult", "Average"]
 // The reviewer can pick only one. The choice is saved like any other answer.
 //
 // Optional:
 //   placeholder — gray hint text inside a text or textarea field
 //   note        — on a segment, a short line under the section title
 //   number      — shown in front of the label, like "1. "
+//   rows        — for a textarea, how many lines tall it starts (default 4)
 
 export const segments = [
   {
@@ -120,42 +123,41 @@ export const segments = [
     ],
   },
 
-  // PLACEHOLDER — replace these questions when the real ones are decided.
   {
     title: "Opportunity for Improvement",
-    note: "Placeholder questions. Replace them in src/questions.js.",
     questions: [
       {
-        id: "opportunityDescription",
-        label: "What is the opportunity?",
-        type: "textarea",
-        placeholder: "Placeholder — describe the opportunity for improvement",
+        id: "opportunityComplexity",
+        number: 1,
+        label: "Was this case more complex than average?",
+        type: "radio",
+        options: ["Difficult", "Average"],
       },
       {
-        id: "opportunityAction",
-        label: "Suggested next step",
-        type: "textarea",
-        placeholder: "Placeholder — what should happen next?",
+        id: "opportunityDocumentation",
+        number: 2,
+        label: "Do you consider there to be a documentation issue? If yes, recommend in comments whether there should be further trending, continued investigation per bylaws, or if outside review is required",
+        type: "radio",
+        options: ["Yes", "No", "N/A"],
+      },
+      {
+        id: "opportunityQualityOfCare",
+        number: 3,
+        label: "Do you consider there to be a quality of care issue? If yes, recommend in comments whether there should be further trending, continued investigation per bylaws, or if outside review is required.",
+        type: "radio",
+        options: ["Yes", "No", "N/A"],
       },
     ],
   },
 
-  // PLACEHOLDER — replace these questions when the real ones are decided.
   {
     title: "Comments",
-    note: "Placeholder questions. Replace them in src/questions.js.",
     questions: [
       {
         id: "comments",
         label: "Comments",
         type: "textarea",
-        placeholder: "Placeholder — overall comments",
-      },
-      {
-        id: "additionalComments",
-        label: "Additional notes",
-        type: "textarea",
-        placeholder: "Placeholder — anything else to record",
+        rows: 12,
       },
     ],
   },
