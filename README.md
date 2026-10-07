@@ -1,5 +1,33 @@
-# peerapp
+# Peer Review App
 
-Run `npm start`, or `npm run dev` to restart on file changes.
+A static peer review form. GitHub Pages serves this folder directly from `main` — there is no build step. Open `index.html` in a browser, or serve the folder with any static file server.
 
-The website is `index.html` plus `src/app.js` and `src/style.css`, published with GitHub Pages.
+The page is split in two. The left side is the questionnaire. The right side is an empty panel reserved for a reference PDF. On a phone the two panels stack, with the questionnaire on top. Each panel scrolls on its own.
+
+Answers are saved in the browser (`localStorage`) as you type and restored on reload. **Submit** shows a summary you can copy. **Clear** erases the saved answers.
+
+## File layout
+
+- `index.html` — page shell: questionnaire on the left, reference PDF panel on the right
+- `src/questions.js` — the form, as data. Edit this file to change sections and questions
+- `src/app.js` — draws the form, saves answers, and builds the summary
+- `src/style.css` — layout and styling
+- `package.json` and `src/index.js` — leftover Node starter files. The website does not use them
+
+## How to edit questions
+
+Open `src/questions.js`. The form is the `segments` list. Each segment has a `title` and a `questions` list, and shows up as its own section.
+
+Each question needs:
+
+- `id` — a unique name. Answers are saved under this id, so do not reuse one (the two incident sections use ids like `incident1Date` and `incident2Date` so they stay separate)
+- `label` — the text shown on the form
+- `type` — one of `text`, `textarea`, `date`, `select`, or `rating`
+
+For a dropdown, set `type` to `"select"` and add `options`, for example `["Open", "In Progress", "Completed"]`.
+
+A `rating` question is 1 to 5. Set `min` and `max` on that question for a different scale.
+
+You can add a `placeholder` string for hint text inside a text field, and a `note` string on a segment for a short line under its title.
+
+Save the file and refresh the page. Answers already saved in the browser stay put unless you click Clear or change a question's `id`.

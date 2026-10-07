@@ -7,10 +7,29 @@
   <link rel="stylesheet" href="src/style.css">
 </head>
 <body>
-  <main>
-    <h1>Peer Review App</h1>
-    <p id="status">Loading...</p>
-  </main>
+  <div class="layout">
+    <section class="pane pane-form" aria-label="Peer review questionnaire">
+      <header class="form-header">
+        <h1>Peer Review App</h1>
+        <p>Answers are saved in this browser as you type.</p>
+      </header>
+      <form id="review-form" autocomplete="off"></form>
+      <div class="actions">
+        <button type="submit" class="button button-primary" form="review-form">Submit</button>
+        <button type="button" class="button button-secondary" id="clear-button">Clear</button>
+      </div>
+      <section id="summary" class="summary" hidden></section>
+    </section>
+
+    <aside class="pane pane-pdf" aria-label="Reference PDF">
+      <div class="pdf-frame">
+        <div class="pdf-empty">
+          <h2>Reference PDF</h2>
+          <p>The reference document will appear here.</p>
+        </div>
+      </div>
+    </aside>
+  </div>
   <script type="module" src="src/app.js"></script>
 </body>
 </html>
