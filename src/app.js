@@ -1,5 +1,6 @@
 import { driveConfigured, postToDrive } from "./drive.js";
 import { openPdf } from "./pdfjs.js";
+import { PROCEDURE_QUESTION_ID, formatProcedureLine, normalizeProcedureTimes } from "./procedure-times.js";
 import { buildSegments, clampIncidentCount, MAX_INCIDENTS } from "./questions.js";
 import { createReferenceView } from "./reference-view.js";
 import { downloadReviewPdf } from "./review-transfer.js";
@@ -11,6 +12,7 @@ const reviewId = new URLSearchParams(window.location.search).get("review") || ""
 let reviewMode = false;
 let reviewName = "";
 let reviewPages = {};
+let procedureTimes = { start: "", end: "" };
 let incidentCount = 0;
 let segments = buildSegments(0);
 let activeQuestionId = "";
@@ -156,6 +158,17 @@ function renderQuestion(question, value) {
     field.addEventListener("focusin", () => activateQuestion(question.id));
   }
   if (question.id === activeQuestionId) field.classList.add("is-active");
+  if (reviewMode && question.id === PROCEDURE_QUESTION_ID) {
+    const line = formatProcedureLine(procedureTimes);
+    if (line) {
+      const info = document.createElement("p");
+      info.className = "procedure-times";
+      info.textContent = line;
+      const legend = field.querySelector("legend");
+      if (legend) legend.after(info);
+      else field.append(info);
+    }
+  }
   return field;
 }
 
@@ -172,7 +185,18 @@ function activateQuestion(id) {
     referenceView.showMessage("No reference pages for this question.");
     return;
   }
-  referenceView.showPages(pages);
+  referenceView.showPages(pages, `${questionHeading(id)} · ${pages.length} page${pages.length === 1 ? "" : "s"}`);
+}
+
+function questionHeading(id) {
+  for (const segment of segments) {
+    for (const question of segment.questions) {
+      if (question.id !== id) continue;
+      if (question.number != null && question.number !== "") return `${segment.title} ${question.number}`;
+      return `${segment.title}: ${question.label}`;
+    }
+  }
+  return "Reference";
 }
 
 function renderTextLike(question, value, inputType) {
@@ -326,6 +350,10 @@ function formatSummary(answers) {
       const raw = answers[question.id];
       const text = raw == null ? "" : String(raw).trim();
       lines.push(`${questionText(question)}: ${text || "(blank)"}`);
+      if (question.id === PROCEDURE_QUESTION_ID) {
+        const line = formatProcedureLine(procedureTimes);
+        if (line) lines.push(line);
+      }
     }
     blocks.push(lines.join("\n"));
   }
@@ -376,6 +404,9 @@ function answersForDrive(answers) {
       id: question.id,
       label: questionText(question),
       value: answers[question.id] == null ? "" : String(answers[question.id]),
+      ...(question.id === PROCEDURE_QUESTION_ID && (procedureTimes.start || procedureTimes.end)
+        ? { procedureTimes: { start: procedureTimes.start || "", end: procedureTimes.end || "" } }
+        : {}),
     })),
   }));
 }
@@ -512,6 +543,7 @@ async function enterReview() {
   reviewMode = true;
   reviewName = review.name || "Review";
   reviewPages = review.pages || {};
+  procedureTimes = normalizeProcedureTimes(review.procedureTimes);
   incidentCount = clampIncidentCount(review.incidentCount);
   segments = buildSegments(incidentCount);
   renderForm(loadState().answers);

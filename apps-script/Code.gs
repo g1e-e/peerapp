@@ -272,6 +272,7 @@ function handleSaveReview(body) {
     pageCount: pageCount,
     incidentCount: incidentCount,
     pages: pages.value,
+    procedureTimes: cleanProcedureTimes(review.procedureTimes),
   };
 
   var saved = persistReview(record);
@@ -330,6 +331,7 @@ function publicReview(review) {
     incidentCount: clampCount(review.incidentCount) || 0,
     pages: review.pages || {},
     pdfChunkCount: review.pdfChunks ? review.pdfChunks.length : 0,
+    procedureTimes: cleanProcedureTimes(review.procedureTimes),
   };
 }
 
@@ -353,6 +355,23 @@ function internalReviewSummary(review, submissionCount) {
     reviewFileId: review.reviewFileId || "",
     folderId: review.folderId || "",
   };
+}
+
+function cleanProcedureTimes(value) {
+  return {
+    start: cleanClock(value && value.start),
+    end: cleanClock(value && value.end),
+  };
+}
+
+function cleanClock(value) {
+  var text = String(value || "").trim();
+  var match = text.match(/^(\d{2}):(\d{2})$/);
+  if (!match) return "";
+  var hours = Number(match[1]);
+  var minutes = Number(match[2]);
+  if (hours > 23 || minutes > 59) return "";
+  return text;
 }
 
 function hasChunks(review) {

@@ -2,6 +2,14 @@ import { REVIEW_LINK_PREFIX } from "./config.js";
 import { isPdfFile, MAX_PDF_BYTES } from "./bytes.js";
 import { postToDrive } from "./drive.js";
 import { formatPageRange } from "./page-range.js";
+import {
+  EMPTY_PROCEDURE_TIMES,
+  PROCEDURE_MISS,
+  PROCEDURE_QUESTION_ID,
+  durationLabel,
+  findProcedureTimes,
+  normalizeProcedureTimes,
+} from "./procedure-times.js";
 import { createPagePicker } from "./page-picker.js";
 import { openPdf } from "./pdfjs.js";
 import { buildSegments, clampIncidentCount, MAX_INCIDENTS } from "./questions.js";
@@ -35,11 +43,13 @@ export function mountPrep(root, options) {
   const picker = createPagePicker(pickerHost);
   picker.onChange((pages) => {
     if (!state || !state.activeId) return;
-    if (pages.length) state.pages[state.activeId] = pages;
-    else delete state.pages[state.activeId];
-    const summary = editor.querySelector(`[data-summary-for="${CSS.escape(state.activeId)}"]`);
+    const questionId = state.activeId;
+    if (pages.length) state.pages[questionId] = pages;
+    else delete state.pages[questionId];
+    const summary = editor.querySelector(`[data-summary-for="${CSS.escape(questionId)}"]`);
     if (summary) summary.textContent = pagesLabel(pages);
-    picker.setUsage(usageCounts(state.activeId));
+    picker.setUsage(usageCounts(questionId));
+    if (questionId === PROCEDURE_QUESTION_ID) refreshProcedureTimes(pages);
   });
 
   let reviews = [];
@@ -114,6 +124,8 @@ export function mountPrep(root, options) {
       pageCount: 0,
       pages: {},
       activeId: "",
+      procedureTimes: { ...EMPTY_PROCEDURE_TIMES },
+      timeFound: null,
     };
   }
 
@@ -243,12 +255,22 @@ export function mountPrep(root, options) {
     });
     drop.append(dropText, choose, fileInput);
 
-    const columns = document.createElement("div");
-    columns.className = "prep-columns";
+    const head = document.createElement("div");
+    head.className = "prep-head";
+    const back = document.createElement("button");
+    back.type = "button";
+    back.className = "button button-secondary";
+    back.textContent = "Back";
+    back.addEventListener("click", () => {
+      editor.hidden = true;
+      editor.replaceChildren();
+      state = null;
+    });
+    head.append(back, nameLabel, countLabel, drop);
+
     const questions = document.createElement("div");
     questions.className = "prep-questions";
     renderQuestions(questions);
-    columns.append(questions, pickerHost);
 
     const save = document.createElement("button");
     save.type = "button";
@@ -261,7 +283,16 @@ export function mountPrep(root, options) {
     linkBox.hidden = !state.savedId;
     if (state.savedId) fillLinkBox(linkBox, state.savedId);
 
-    editor.append(nameLabel, countLabel, drop, columns, save, linkBox);
+    const left = document.createElement("div");
+    left.className = "prep-left";
+    left.append(head, questions, save, linkBox);
+    const right = document.createElement("div");
+    right.className = "prep-right";
+    right.append(pickerHost);
+    const workspace = document.createElement("div");
+    workspace.className = "prep-workspace";
+    workspace.append(left, right);
+    editor.append(workspace);
   }
 
   function pdfDropLabel() {
@@ -309,11 +340,97 @@ export function mountPrep(root, options) {
         });
 
         row.append(button, summary);
+        if (question.id === PROCEDURE_QUESTION_ID) row.append(procedureTimesBox());
         block.append(row);
       }
       host.append(block);
     }
     if (activeQuestion) activateQuestion(activeSegment, activeQuestion, activeRow);
+  }
+
+  function procedureTimesBox() {
+    const box = document.createElement("div");
+    box.className = "prep-times";
+    const note = document.createElement("p");
+    note.className = "prep-times-note";
+    note.textContent = procedureNote();
+    const row = document.createElement("div");
+    row.className = "prep-times-inputs";
+    const start = document.createElement("input");
+    start.type = "time";
+    start.value = state.procedureTimes.start || "";
+    start.setAttribute("aria-label", "Procedure start");
+    const end = document.createElement("input");
+    end.type = "time";
+    end.value = state.procedureTimes.end || "";
+    end.setAttribute("aria-label", "Procedure end");
+    const clear = document.createElement("button");
+    clear.type = "button";
+    clear.className = "button button-secondary";
+    clear.textContent = "Clear times";
+    start.addEventListener("input", () => {
+      state.procedureTimes.start = start.value;
+      note.textContent = procedureNote();
+    });
+    end.addEventListener("input", () => {
+      state.procedureTimes.end = end.value;
+      note.textContent = procedureNote();
+    });
+    clear.addEventListener("click", (event) => {
+      event.stopPropagation();
+      state.procedureTimes = { ...EMPTY_PROCEDURE_TIMES };
+      state.timeFound = null;
+      start.value = "";
+      end.value = "";
+      note.textContent = procedureNote();
+    });
+    row.append(start, end, clear);
+    box.append(note, row);
+    return box;
+  }
+
+  function procedureNote() {
+    const pages = state.pages[PROCEDURE_QUESTION_ID] || [];
+    const found = state.timeFound;
+    const current = state.procedureTimes || EMPTY_PROCEDURE_TIMES;
+    const lines = [];
+    if (found && found.start && found.start === current.start) {
+      lines.push(`Procedure start: ${found.start}${found.startPage ? ` (page ${found.startPage})` : ""}`);
+    }
+    if (found && found.end && found.end === current.end) {
+      lines.push(`Procedure end: ${found.end}${found.endPage ? ` (page ${found.endPage})` : ""}`);
+    }
+    if (current.start && current.end) lines.push(`Duration: ${durationLabel(current.start, current.end)}`);
+    if (!lines.length && pages.length && !current.start && !current.end) return PROCEDURE_MISS;
+    return lines.join("\n");
+  }
+
+  async function refreshProcedureTimes(pages, keepOverrides) {
+    if (!pdfDoc || !pages.length) {
+      state.timeFound = null;
+      if (!pages.length && !keepOverrides) state.procedureTimes = { ...EMPTY_PROCEDURE_TIMES };
+      paintProcedureTimes();
+      return;
+    }
+    const found = await findProcedureTimes(pdfDoc, pages);
+    state.timeFound = found;
+    if (!keepOverrides) {
+      state.procedureTimes = {
+        start: found.start || "",
+        end: found.end || "",
+      };
+    }
+    paintProcedureTimes();
+  }
+
+  function paintProcedureTimes() {
+    const box = editor.querySelector(".prep-times");
+    if (!box) return;
+    const note = box.querySelector(".prep-times-note");
+    const [start, end] = box.querySelectorAll("input");
+    if (note) note.textContent = procedureNote();
+    if (start) start.value = state.procedureTimes.start || "";
+    if (end) end.value = state.procedureTimes.end || "";
   }
 
   function activateQuestion(segment, question, row) {
@@ -416,6 +533,8 @@ export function mountPrep(root, options) {
       pages: { ...(full.pages || {}) },
       activeId: "",
       savedId: full.id,
+      procedureTimes: normalizeProcedureTimes(full.procedureTimes),
+      timeFound: null,
     };
     pendingFile = null;
     pdfDoc = null;
@@ -428,6 +547,7 @@ export function mountPrep(root, options) {
       pdfDoc = await openPdf(bytes);
       picker.setPdf(pdfDoc);
       picker.showMessage("Choose a question to select pages.");
+      await refreshProcedureTimes(state.pages[PROCEDURE_QUESTION_ID] || [], true);
     } catch (err) {
       if (authFailed(err)) return;
       picker.showMessage(err.message || "Could not load the reference PDF.");
@@ -489,6 +609,10 @@ export function mountPrep(root, options) {
         pageCount: state.pageCount,
         incidentCount: state.incidentCount,
         pages: collected.pages,
+        procedureTimes: {
+          start: state.procedureTimes.start || "",
+          end: state.procedureTimes.end || "",
+        },
       };
       if (pendingFile) {
         const uploaded = await uploadPdf(pendingFile, password(), (done, total) => {
