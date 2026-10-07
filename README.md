@@ -28,7 +28,7 @@ Open `src/questions.js`. The form is the `segments` list. Each segment has a `ti
 
 Each question needs:
 
-- `id` — a unique name. Answers are saved under this id, so do not reuse one (the two incident sections use ids like `incident1Date` and `incident2Date` so they stay separate)
+- `id` — a unique name. Answers are saved under this id, so do not reuse one (the two incident sections use ids like `incident1PatientName` and `incident2PatientName` so they stay separate)
 - `label` — the text shown on the form
 - `type` — one of `text`, `textarea`, `date`, `select`, `rating`, `yesNoNa`, or `radio`
 
@@ -39,6 +39,8 @@ A `rating` question is 1 to 5. Set `min` and `max` on that question for a differ
 A `yesNoNa` question shows Yes, No, and N/A as radio buttons on one row. A `radio` question is the same row with your own `options`, for example `["Difficult", "Average"]`. Set `number` to show that number in front of the label.
 
 A `textarea` starts at 4 rows. Set `rows` to make it taller.
+
+Set `width` to `"half"` to place a short field beside the next half-width field when the section is wide. Leave it off for a full-width field. A narrow section stacks every field in one column.
 
 You can add a `placeholder` string for hint text inside a text field, and a `note` string on a segment for a short line under its title.
 

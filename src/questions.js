@@ -23,6 +23,9 @@
 //   note        — on a segment, a short line under the section title
 //   number      — shown in front of the label, like "1. "
 //   rows        — for a textarea, how many lines tall it starts (default 4)
+//   width       — "half" sits the field in a two-column row when the section
+//                 is wide (Patient name beside MRN, for example). Leave it off
+//                 for a full-width field. A narrow section stacks every field.
 
 export const segments = [
   {
@@ -162,63 +165,124 @@ export const segments = [
     ],
   },
 
-  // PLACEHOLDER — same starter questions as Incident 2, with different ids
-  // so the two incidents keep separate answers. Edit this list on its own.
+  // Same fields as Incident 2. Ids start with incident1 so the answers stay separate.
   {
     title: "Peer Review - Incident 1",
-    note: "Placeholder questions. Replace them in src/questions.js.",
     questions: [
       {
-        id: "incident1Date",
-        label: "Incident date",
+        id: "incident1PatientName",
+        label: "Patient name",
+        type: "text",
+        width: "half",
+      },
+      {
+        id: "incident1Mrn",
+        label: "MRN",
+        type: "text",
+        width: "half",
+      },
+      {
+        id: "incident1SurgeryDate",
+        label: "Date of Surgery",
         type: "date",
+        width: "half",
       },
       {
-        id: "incident1Description",
-        label: "Description",
+        id: "incident1Number",
+        label: "Incident #",
+        type: "text",
+        width: "half",
+      },
+      {
+        id: "incident1Surgeon",
+        label: "Surgeon",
+        type: "text",
+        width: "half",
+      },
+      {
+        id: "incident1Procedure",
+        label: "Procedure",
         type: "textarea",
-        placeholder: "Placeholder — what happened in this incident?",
+        rows: 2,
       },
       {
-        id: "incident1Rating",
-        label: "Rating",
-        type: "rating",
-      },
-      {
-        id: "incident1Notes",
-        label: "Notes",
+        id: "incident1EventReview",
+        label: "Event/Routine review",
         type: "textarea",
-        placeholder: "Placeholder — notes about this incident",
+        rows: 5,
+      },
+      {
+        id: "incident1ReviewedBy",
+        label: "Reviewed by",
+        type: "text",
+        width: "half",
+      },
+      {
+        id: "incident1ReviewDate",
+        label: "Date",
+        type: "date",
+        width: "half",
       },
     ],
   },
 
-  // PLACEHOLDER — same starter questions as Incident 1, with different ids.
+  // Same fields as Incident 1. Ids start with incident2 so the answers stay separate.
   {
     title: "Peer Review - Incident 2",
-    note: "Placeholder questions. Replace them in src/questions.js.",
     questions: [
       {
-        id: "incident2Date",
-        label: "Incident date",
+        id: "incident2PatientName",
+        label: "Patient name",
+        type: "text",
+        width: "half",
+      },
+      {
+        id: "incident2Mrn",
+        label: "MRN",
+        type: "text",
+        width: "half",
+      },
+      {
+        id: "incident2SurgeryDate",
+        label: "Date of Surgery",
         type: "date",
+        width: "half",
       },
       {
-        id: "incident2Description",
-        label: "Description",
+        id: "incident2Number",
+        label: "Incident #",
+        type: "text",
+        width: "half",
+      },
+      {
+        id: "incident2Surgeon",
+        label: "Surgeon",
+        type: "text",
+        width: "half",
+      },
+      {
+        id: "incident2Procedure",
+        label: "Procedure",
         type: "textarea",
-        placeholder: "Placeholder — what happened in this incident?",
+        rows: 2,
       },
       {
-        id: "incident2Rating",
-        label: "Rating",
-        type: "rating",
-      },
-      {
-        id: "incident2Notes",
-        label: "Notes",
+        id: "incident2EventReview",
+        label: "Event/Routine review",
         type: "textarea",
-        placeholder: "Placeholder — notes about this incident",
+        rows: 5,
+      },
+      {
+        id: "incident2ReviewedBy",
+        label: "Reviewed by",
+        type: "text",
+        width: "half",
+      },
+      {
+        id: "incident2ReviewDate",
+        label: "Date",
+        type: "date",
+        width: "half",
       },
     ],
   },

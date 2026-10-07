@@ -74,30 +74,44 @@ function renderSegment(segment, answers) {
     section.append(note);
   }
 
+  const fields = document.createElement("div");
+  fields.className = "segment-fields";
+
   for (const question of segment.questions) {
     const value = answers[question.id] ?? "";
-    section.append(renderQuestion(question, value));
+    fields.append(renderQuestion(question, value));
   }
 
+  section.append(fields);
   return section;
 }
 
 function renderQuestion(question, value) {
+  let field;
+
   switch (question.type) {
     case "textarea":
-      return renderTextarea(question, value);
+      field = renderTextarea(question, value);
+      break;
     case "select":
-      return renderSelect(question, value);
+      field = renderSelect(question, value);
+      break;
     case "rating":
-      return renderRating(question, value);
+      field = renderRating(question, value);
+      break;
     case "yesNoNa":
     case "radio":
-      return renderRadio(question, value);
+      field = renderRadio(question, value);
+      break;
     case "date":
-      return renderTextLike(question, value, "date");
+      field = renderTextLike(question, value, "date");
+      break;
     default:
-      return renderTextLike(question, value, "text");
+      field = renderTextLike(question, value, "text");
   }
+
+  if (question.width === "half") field.classList.add("field-half");
+  return field;
 }
 
 function renderTextLike(question, value, inputType) {
