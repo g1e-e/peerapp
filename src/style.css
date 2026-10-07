@@ -760,3 +760,157 @@ body.admin-body {
     grid-template-columns: 1fr;
   }
 }
+
+.page-picker {
+  --thumb: 128px;
+  min-width: 0;
+}
+
+.page-picker.is-small { --thumb: 88px; }
+.page-picker.is-medium { --thumb: 128px; }
+.page-picker.is-large { --thumb: 188px; }
+
+.page-picker-title {
+  margin: 0 0 0.6rem;
+  font-weight: 600;
+}
+
+.page-picker-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem;
+  margin-bottom: 0.6rem;
+}
+
+.page-size {
+  display: flex;
+  gap: 0.3rem;
+}
+
+.page-size .is-selected {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+
+.page-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(var(--thumb), 1fr));
+  gap: 0.55rem;
+  max-height: 70vh;
+  overflow: auto;
+  padding: 0.2rem;
+}
+
+.thumb {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  padding: 0.35rem;
+  border: 2px solid var(--line);
+  border-radius: 10px;
+  background: #fff;
+  color: var(--ink);
+  font: inherit;
+  cursor: pointer;
+}
+
+.thumb.is-selected {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.thumb-slot {
+  display: block;
+  min-height: 4.5rem;
+  background: #e7eef3;
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.thumb-slot canvas {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.thumb-num {
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+
+.thumb-check {
+  position: absolute;
+  top: 0.45rem;
+  left: 0.45rem;
+  width: 1.3rem;
+  height: 1.3rem;
+  border-radius: 999px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 0.85rem;
+  line-height: 1.3rem;
+  text-align: center;
+}
+
+.thumb-badge {
+  position: absolute;
+  top: 0.45rem;
+  right: 0.45rem;
+  min-width: 1.2rem;
+  padding: 0 0.3rem;
+  border-radius: 999px;
+  background: #5d6d7e;
+  color: #fff;
+  font-size: 0.75rem;
+  line-height: 1.2rem;
+  text-align: center;
+}
+
+.thumb-zoom {
+  position: absolute;
+  left: 0.45rem;
+  bottom: 1.7rem;
+  padding: 0.1rem 0.35rem;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.92);
+  color: var(--ink);
+  font-size: 0.72rem;
+}
+
+.page-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  padding: 1rem;
+  background: rgba(20, 28, 36, 0.78);
+}
+
+.page-overlay[hidden] {
+  display: none !important;
+}
+
+.page-overlay-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 0.45rem;
+}
+
+.page-overlay-stage {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+}
+
+.page-overlay-stage canvas {
+  display: block;
+  margin: 0 auto;
+  background: #fff;
+}

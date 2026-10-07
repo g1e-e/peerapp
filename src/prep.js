@@ -1,12 +1,12 @@
-// Ara prepares a review: name, PDF, how many incidents, and page assignments.
+// Ara prepares a review: name, PDF, how many incidents, and pages chosen from thumbnails.
 
 import { REVIEW_LINK_PREFIX } from "./config.js";
 import { isPdfFile, MAX_PDF_BYTES } from "./bytes.js";
 import { postToDrive } from "./drive.js";
-import { formatPageRange, pageCountLabel, parsePageRange } from "./page-range.js";
+import { formatPageRange } from "./page-range.js";
+import { createPagePicker } from "./page-picker.js";
 import { openPdf } from "./pdfjs.js";
 import { buildSegments, clampIncidentCount, MAX_INCIDENTS } from "./questions.js";
-import { createReferenceView } from "./reference-view.js";
 import { downloadReviewPdf, uploadPdf } from "./review-transfer.js";
 
 export function mountPrep(root, options) {
@@ -33,8 +33,16 @@ export function mountPrep(root, options) {
 
   root.append(toolbar, status, list, editor);
 
-  const viewHost = document.createElement("div");
-  const view = createReferenceView(viewHost);
+  const pickerHost = document.createElement("div");
+  const picker = createPagePicker(pickerHost);
+  picker.onChange((pages) => {
+    if (!state || !state.activeId) return;
+    if (pages.length) state.pages[state.activeId] = pages;
+    else delete state.pages[state.activeId];
+    const summary = editor.querySelector(`[data-summary-for="${CSS.escape(state.activeId)}"]`);
+    if (summary) summary.textContent = pagesLabel(pages);
+    picker.setUsage(usageCounts(state.activeId));
+  });
 
   let reviews = [];
   let pdfDoc = null;
@@ -80,17 +88,48 @@ export function mountPrep(root, options) {
     return `${question.number}. ${question.label}`;
   }
 
+  function selectionTitle(segment, question) {
+    if (question.number != null && question.number !== "") return `${segment.title} ${question.number}`;
+    return `${segment.title}: ${question.label}`;
+  }
+
+  function pagesLabel(pages) {
+    if (!pages || !pages.length) return "No pages";
+    return `Pages ${formatPageRange(pages)} (${pages.length})`;
+  }
+
+  function usageCounts(activeId) {
+    const counts = {};
+    for (const [id, pages] of Object.entries(state.pages || {})) {
+      if (id === activeId) continue;
+      for (const page of pages || []) counts[page] = (counts[page] || 0) + 1;
+    }
+    return counts;
+  }
+
   function blankState() {
     return {
       id: newReviewId(),
       name: "",
       incidentCount: 0,
-      pdfFileId: "",
+      hasPdf: false,
       pageCount: 0,
       pages: {},
-      ranges: {},
       activeId: "",
     };
+  }
+
+  function setReviews(next) {
+    reviews = Array.isArray(next) ? next : [];
+    renderList();
+    if (options.onReviews) options.onReviews(reviews);
+  }
+
+  function upsertReview(review) {
+    const index = reviews.findIndex((item) => item.id === review.id);
+    if (index >= 0) reviews[index] = { ...reviews[index], ...review };
+    else reviews.unshift(review);
+    setReviews(reviews);
   }
 
   function renderList() {
@@ -107,9 +146,9 @@ export function mountPrep(root, options) {
       const item = document.createElement("li");
       item.className = "prep-review";
 
-      const title = document.createElement("p");
-      title.className = "admin-when";
-      title.textContent = review.name || "Untitled review";
+      const heading = document.createElement("p");
+      heading.className = "admin-when";
+      heading.textContent = review.name || "Untitled review";
 
       const meta = document.createElement("p");
       meta.className = "admin-who";
@@ -139,7 +178,7 @@ export function mountPrep(root, options) {
       remove.addEventListener("click", () => deleteReview(review));
 
       actions.append(open, copy, remove);
-      item.append(title, meta, actions);
+      item.append(heading, meta, actions);
       list.append(item);
     }
   }
@@ -178,9 +217,7 @@ export function mountPrep(root, options) {
     const drop = document.createElement("div");
     drop.className = "prep-drop";
     const dropText = document.createElement("p");
-    dropText.textContent = pendingFile
-      ? pendingFile.name
-      : (state.pdfFileId ? "Reference PDF saved. Drop a new file to replace it." : "Drop a reference PDF here, or choose a file.");
+    dropText.textContent = pdfDropLabel();
     const choose = document.createElement("button");
     choose.type = "button";
     choose.className = "button button-secondary";
@@ -213,7 +250,7 @@ export function mountPrep(root, options) {
     const questions = document.createElement("div");
     questions.className = "prep-questions";
     renderQuestions(questions);
-    columns.append(questions, viewHost);
+    columns.append(questions, pickerHost);
 
     const save = document.createElement("button");
     save.type = "button";
@@ -229,8 +266,17 @@ export function mountPrep(root, options) {
     editor.append(nameLabel, countLabel, drop, columns, save, linkBox);
   }
 
+  function pdfDropLabel() {
+    if (pendingFile) return pendingFile.name;
+    if (state.hasPdf) return "Reference PDF saved. Drop a new file to replace it.";
+    return "Drop a reference PDF here, or choose a file.";
+  }
+
   function renderQuestions(host) {
     host.replaceChildren();
+    let activeRow = null;
+    let activeSegment = null;
+    let activeQuestion = null;
     for (const segment of buildSegments(state.incidentCount)) {
       const block = document.createElement("section");
       block.className = "segment";
@@ -241,43 +287,47 @@ export function mountPrep(root, options) {
       for (const question of segment.questions) {
         const row = document.createElement("div");
         row.className = "prep-question";
-        if (question.id === state.activeId) row.classList.add("is-active");
+        if (question.id === state.activeId) {
+          row.classList.add("is-active");
+          activeRow = row;
+          activeSegment = segment;
+          activeQuestion = question;
+        }
 
         const button = document.createElement("button");
         button.type = "button";
         button.className = "prep-question-label";
         button.textContent = questionText(question);
 
-        const range = document.createElement("input");
-        range.type = "text";
-        range.placeholder = "3-7, 12, 40-45";
-        range.value = state.ranges[question.id] || "";
+        const summary = document.createElement("p");
+        summary.className = "prep-page-count";
+        summary.dataset.summaryFor = question.id;
+        summary.textContent = pagesLabel(state.pages[question.id]);
 
-        const count = document.createElement("p");
-        count.className = "prep-page-count";
-        paintCount(count, range.value);
-
-        const select = () => previewQuestion(question.id, row);
-        button.addEventListener("click", select);
-        range.addEventListener("focus", select);
-        range.addEventListener("input", () => {
-          state.ranges[question.id] = range.value;
-          paintCount(count, range.value);
-          if (state.activeId === question.id) previewQuestion(question.id, row);
+        button.addEventListener("click", () => activateQuestion(segment, question, row));
+        row.addEventListener("click", (event) => {
+          if (event.target.closest("button")) return;
+          activateQuestion(segment, question, row);
         });
 
-        row.append(button, range, count);
+        row.append(button, summary);
         block.append(row);
       }
       host.append(block);
     }
+    if (activeQuestion) activateQuestion(activeSegment, activeQuestion, activeRow);
   }
 
-  function paintCount(element, text) {
-    const parsed = parsePageRange(text, state.pageCount);
-    element.textContent = parsed.error || pageCountLabel(parsed.pages.length);
-    element.classList.toggle("is-error", Boolean(parsed.error));
-    return parsed;
+  function activateQuestion(segment, question, row) {
+    state.activeId = question.id;
+    for (const item of editor.querySelectorAll(".prep-question")) {
+      item.classList.toggle("is-active", item === row);
+    }
+    picker.setActive(
+      `Selecting pages for: ${selectionTitle(segment, question)}`,
+      state.pages[question.id] || [],
+      usageCounts(question.id),
+    );
   }
 
   function applyIncidentCount(input) {
@@ -291,44 +341,20 @@ export function mountPrep(root, options) {
     }
     for (const id of Object.keys(state.pages)) {
       const match = id.match(/^incident(\d+)\./);
-      if (match && Number(match[1]) > next) {
-        delete state.pages[id];
-        delete state.ranges[id];
-      }
+      if (match && Number(match[1]) > next) delete state.pages[id];
     }
     state.incidentCount = next;
     input.value = String(next);
     const host = editor.querySelector(".prep-questions");
     if (host) renderQuestions(host);
+    if (state.activeId) picker.setUsage(usageCounts(state.activeId));
   }
 
   function removedAssignments(next) {
     return Object.keys(state.pages).filter((id) => {
       const match = id.match(/^incident(\d+)\./);
-      return match && Number(match[1]) > next && state.pages[id].length;
+      return match && Number(match[1]) > next && (state.pages[id] || []).length;
     });
-  }
-
-  function previewQuestion(id, row) {
-    state.activeId = id;
-    for (const item of editor.querySelectorAll(".prep-question")) {
-      item.classList.toggle("is-active", item === row);
-    }
-    const parsed = parsePageRange(state.ranges[id] || "", state.pageCount);
-    if (!parsed.error) state.pages[id] = parsed.pages;
-    if (!pdfDoc) {
-      view.showMessage("Add a PDF to preview these pages.");
-      return;
-    }
-    if (parsed.error) {
-      view.showMessage(parsed.error);
-      return;
-    }
-    if (!parsed.pages.length) {
-      view.showMessage("No reference pages for this question.");
-      return;
-    }
-    view.showPages(parsed.pages);
   }
 
   async function usePdfFile(file, label) {
@@ -350,43 +376,63 @@ export function mountPrep(root, options) {
     }
     pendingFile = file;
     state.pageCount = pdfDoc.numPages;
-    state.pdfFileId = "";
-    view.setPdf(pdfDoc);
-    view.showMessage("Click a question to preview its pages.");
+    picker.setPdf(pdfDoc);
     label.textContent = file.name;
-    const host = editor.querySelector(".prep-questions");
-    if (host) renderQuestions(host);
+    if (state.activeId) {
+      const active = findQuestion(state.activeId);
+      if (active) activateQuestion(active.segment, active.question, active.row);
+    } else {
+      picker.showMessage("Choose a question to select pages.");
+    }
+  }
+
+  function findQuestion(id) {
+    for (const segment of buildSegments(state.incidentCount)) {
+      for (const question of segment.questions) {
+        if (question.id !== id) continue;
+        const row = editor.querySelector(`[data-summary-for="${CSS.escape(id)}"]`)?.closest(".prep-question");
+        return { segment, question, row };
+      }
+    }
+    return null;
   }
 
   async function editReview(review) {
-    state = {
-      id: review.id,
-      name: review.name || "",
-      incidentCount: clampIncidentCount(review.incidentCount),
-      pdfFileId: review.pdfFileId || "",
-      pageCount: Number(review.pageCount) || 0,
-      pages: { ...(review.pages || {}) },
-      ranges: {},
-      activeId: "",
-      savedId: review.id,
-    };
-    for (const [id, pages] of Object.entries(state.pages)) {
-      state.ranges[id] = formatPageRange(pages);
+    showStatus("");
+    let full;
+    try {
+      const data = await postToDrive({ action: "getReview", reviewId: review.id });
+      full = data.review;
+    } catch (err) {
+      if (authFailed(err)) return;
+      showStatus(err.message || "Could not open the review.", "error");
+      return;
     }
+
+    state = {
+      id: full.id,
+      name: full.name || "",
+      incidentCount: clampIncidentCount(full.incidentCount),
+      hasPdf: true,
+      pageCount: Number(full.pageCount) || 0,
+      pages: { ...(full.pages || {}) },
+      activeId: "",
+      savedId: full.id,
+    };
     pendingFile = null;
     pdfDoc = null;
     renderEditor();
-    view.showProgress("Loading reference PDF…", 0);
+    picker.showProgress("Loading reference PDF…");
     try {
-      const bytes = await downloadReviewPdf(review.id, (done, total) => {
-        view.showProgress(`Loading reference PDF… part ${done} of ${total}`, done / total);
+      const bytes = await downloadReviewPdf(full.id, full.pdfChunkCount, (done, total) => {
+        picker.showProgress(`Loading reference PDF… part ${done} of ${total}`);
       });
       pdfDoc = await openPdf(bytes);
-      view.setPdf(pdfDoc);
-      view.showMessage("Click a question to preview its pages.");
+      picker.setPdf(pdfDoc);
+      picker.showMessage("Choose a question to select pages.");
     } catch (err) {
       if (authFailed(err)) return;
-      view.showMessage(err.message || "Could not load the reference PDF.");
+      picker.showMessage(err.message || "Could not load the reference PDF.");
     }
   }
 
@@ -411,11 +457,11 @@ export function mountPrep(root, options) {
     const pages = {};
     for (const segment of buildSegments(state.incidentCount)) {
       for (const question of segment.questions) {
-        const parsed = parsePageRange(state.ranges[question.id] || "", state.pageCount);
-        if (parsed.error) {
-          return { error: `${questionText(question)}: ${parsed.error}` };
+        const list = state.pages[question.id] || [];
+        if (list.length > 50) {
+          return { error: `${questionText(question)}: A question can have at most 50 pages.` };
         }
-        if (parsed.pages.length) pages[question.id] = parsed.pages;
+        if (list.length) pages[question.id] = list;
       }
     }
     return { pages };
@@ -427,7 +473,7 @@ export function mountPrep(root, options) {
       showStatus("Give the review a name.", "error");
       return;
     }
-    if (!state.pageCount || (!pendingFile && !state.pdfFileId)) {
+    if (!state.pageCount || (!pendingFile && !state.hasPdf)) {
       showStatus("Add a PDF first.", "error");
       return;
     }
@@ -439,34 +485,35 @@ export function mountPrep(root, options) {
 
     button.disabled = true;
     try {
-      let pdfFileId = state.pdfFileId;
+      const payload = {
+        id: state.id,
+        name,
+        pageCount: state.pageCount,
+        incidentCount: state.incidentCount,
+        pages: collected.pages,
+      };
       if (pendingFile) {
-        showStatus("Uploading PDF…", "notice");
-        pdfFileId = await uploadPdf(pendingFile, password(), (done, total) => {
-          showStatus(`Uploading PDF… part ${done} of ${total}`, "notice");
+        const uploaded = await uploadPdf(pendingFile, password(), (done, total) => {
+          showStatus(`Uploading ${done} of ${total}...`, "notice");
         });
-        state.pdfFileId = pdfFileId;
+        payload.pdfChunks = uploaded.pdfChunks;
+        payload.folderId = uploaded.folderId;
+        payload.pdfSize = uploaded.pdfSize;
         pendingFile = null;
+        state.hasPdf = true;
       }
-      showStatus("Saving review…", "notice");
-      await postToDrive({
+      showStatus("Saving...", "notice");
+      const saved = await postToDrive({
         action: "saveReview",
         password: password(),
-        review: {
-          id: state.id,
-          name,
-          pdfFileId,
-          pageCount: state.pageCount,
-          incidentCount: state.incidentCount,
-          pages: collected.pages,
-        },
+        review: payload,
       });
       state.pages = collected.pages;
       state.savedId = state.id;
       const linkBox = editor.querySelector(".prep-link");
       if (linkBox) fillLinkBox(linkBox, state.id);
       showStatus("Saved.", "success");
-      await refresh();
+      upsertReview(saved.review);
     } catch (err) {
       if (authFailed(err)) return;
       showStatus(err.message || "Could not save the review.", "error");
@@ -486,38 +533,27 @@ export function mountPrep(root, options) {
         editor.replaceChildren();
         state = null;
       }
-      await refresh();
+      setReviews(reviews.filter((item) => item.id !== review.id));
     } catch (err) {
       if (authFailed(err)) return;
       showStatus(err.message || "Could not delete the review.", "error");
     }
   }
 
-  async function refresh() {
-    const data = await postToDrive({ action: "listReviews", password: password() });
-    reviews = Array.isArray(data.reviews) ? data.reviews : [];
-    renderList();
-    if (options.onReviews) options.onReviews(reviews);
-  }
-
   newButton.addEventListener("click", () => {
     state = blankState();
     pendingFile = null;
     pdfDoc = null;
+    picker.setPdf(null);
     showStatus("");
     renderEditor();
-    view.showMessage("Add a PDF, then click a question to preview its pages.");
+    picker.showMessage("Choose a question to select pages.");
   });
 
   window.addEventListener("dragover", (event) => event.preventDefault());
   window.addEventListener("drop", (event) => event.preventDefault());
 
-  return {
-    refresh,
-    getReviews() {
-      return reviews;
-    },
-  };
+  return { setReviews };
 }
 
 function newReviewId() {

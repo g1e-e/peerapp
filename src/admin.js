@@ -50,9 +50,9 @@ function formatWhen(iso) {
 
 function preview(submission) {
   const parts = [];
-  const mrn = fieldValue(submission, ["mrn"], ["MRN #", "MRN"]);
-  const patient = fieldValue(submission, [], ["Patient name"]);
-  const provider = fieldValue(submission, ["providerName"], ["Provider Name"]);
+  const mrn = submission.mrn || fieldValue(submission, ["mrn"], ["MRN #", "MRN"]);
+  const patient = submission.patientName || fieldValue(submission, [], ["Patient name"]);
+  const provider = submission.provider || fieldValue(submission, ["providerName"], ["Provider Name"]);
   if (mrn) parts.push(`MRN ${mrn}`);
   if (patient) parts.push(patient);
   if (provider) parts.push(provider);
@@ -92,11 +92,7 @@ function renderList() {
     who.textContent = preview(submission) || submission.name;
 
     button.append(when, who);
-    button.addEventListener("click", () => {
-      selectedId = submission.id;
-      renderList();
-      renderDetail(submission);
-    });
+    button.addEventListener("click", () => openSubmission(submission));
     item.append(button);
     list.append(item);
   }
@@ -202,17 +198,50 @@ function fillReviewFilter(reviews) {
   submissionFilterValue = submissionFilter.value;
 }
 
-async function loadSubmissions() {
-  showMessage(boardMessage, "");
-  const data = await postToDrive({ action: "list", password: adminPassword });
+function applyDashboard(data) {
   submissions = Array.isArray(data.submissions) ? data.submissions : [];
+  prep.setReviews(Array.isArray(data.reviews) ? data.reviews : []);
   if (selectedId && !submissions.some((item) => item.id === selectedId)) {
     selectedId = "";
     resetDetail();
   }
   renderList();
-  const selected = submissions.find((item) => item.id === selectedId);
-  if (selected) renderDetail(selected);
+}
+
+async function loadDashboard() {
+  showMessage(boardMessage, "");
+  const data = await postToDrive({ action: "dashboard", password: adminPassword });
+  applyDashboard(data);
+}
+
+async function openSubmission(summary) {
+  selectedId = summary.id;
+  renderList();
+  detail.replaceChildren();
+  const loading = document.createElement("p");
+  loading.className = "admin-placeholder";
+  loading.textContent = "Loading submission…";
+  detail.append(loading);
+  try {
+    const data = await postToDrive({
+      action: "getSubmission",
+      password: adminPassword,
+      id: summary.id,
+    });
+    if (selectedId !== summary.id) return;
+    renderDetail(data.submission);
+  } catch (err) {
+    if (isAuthFailure(err.message)) {
+      lock();
+      showMessage(loginMessage, err.message, "error");
+      return;
+    }
+    detail.replaceChildren();
+    const note = document.createElement("p");
+    note.className = "submit-status error";
+    note.textContent = err.message || "Could not open that submission.";
+    detail.append(note);
+  }
 }
 
 async function unlock(password) {
@@ -220,8 +249,7 @@ async function unlock(password) {
   unlockButton.disabled = true;
   showMessage(loginMessage, "");
   try {
-    await loadSubmissions();
-    await prep.refresh();
+    await loadDashboard();
     sessionStorage.setItem(PASSWORD_KEY, password);
     showBoard();
     showTab("reviews");
@@ -290,8 +318,7 @@ if (!driveConfigured()) {
     const button = document.querySelector("#admin-refresh");
     button.disabled = true;
     try {
-      await loadSubmissions();
-      await prep.refresh();
+      await loadDashboard();
     } catch (err) {
       const message = err.message || "Could not refresh.";
       if (isAuthFailure(message)) {
