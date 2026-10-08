@@ -491,8 +491,8 @@ async function onSubmit(event) {
       payload.reviewName = reviewName;
       payload.code = readAccessCode();
     }
-    await postToDrive(payload);
-    if (reviewMode) {
+    const data = await postToDrive(payload);
+    if (reviewMode && data.closed !== false) {
       showClosedReview();
       return;
     }

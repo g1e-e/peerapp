@@ -1,4 +1,5 @@
 export const CHUNK_BYTES = 5 * 1024 * 1024;
+export const INLINE_PDF_BYTES = 8 * 1024 * 1024;
 export const MAX_PDF_BYTES = 45 * 1024 * 1024;
 
 export function isPdfFile(file) {

@@ -1,6 +1,7 @@
 import { postToDrive } from "./drive.js";
 import {
   CHUNK_BYTES,
+  INLINE_PDF_BYTES,
   MAX_PDF_BYTES,
   base64ToBytes,
   concatBytes,
@@ -9,7 +10,7 @@ import {
 
 export { MAX_PDF_BYTES };
 
-const CONCURRENCY = 4;
+const CONCURRENCY = 6;
 
 export async function uploadPdf(file, token, onProgress) {
   const bytes = new Uint8Array(await file.arrayBuffer());
@@ -17,6 +18,9 @@ export async function uploadPdf(file, token, onProgress) {
     throw new Error("This PDF is over 45 MB. Compress it and try again.");
   }
   if (bytes.length === 0) throw new Error("That PDF is empty.");
+  if (bytes.length <= INLINE_PDF_BYTES) {
+    return { inlinePdf: uint8ToBase64(bytes), pdfSize: bytes.length };
+  }
 
   const chunkCount = Math.ceil(bytes.length / CHUNK_BYTES);
   const started = await postToDrive({
@@ -28,6 +32,7 @@ export async function uploadPdf(file, token, onProgress) {
   });
 
   const fileIds = new Array(chunkCount);
+  const sizes = new Array(chunkCount);
   let finished = 0;
   await runPool(chunkCount, CONCURRENCY, async (index) => {
     const slice = bytes.subarray(index * CHUNK_BYTES, (index + 1) * CHUNK_BYTES);
@@ -39,6 +44,7 @@ export async function uploadPdf(file, token, onProgress) {
       data: uint8ToBase64(slice),
     }));
     fileIds[index] = saved.fileId;
+    sizes[index] = Number(saved.size) || slice.length;
     finished += 1;
     if (onProgress) onProgress(finished, chunkCount);
   });
@@ -48,6 +54,7 @@ export async function uploadPdf(file, token, onProgress) {
     token,
     uploadId: started.uploadId,
     fileIds,
+    sizes,
   });
 }
 
