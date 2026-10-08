@@ -36,13 +36,13 @@ export async function uploadPdf(file, token, onProgress) {
   let finished = 0;
   await runPool(chunkCount, CONCURRENCY, async (index) => {
     const slice = bytes.subarray(index * CHUNK_BYTES, (index + 1) * CHUNK_BYTES);
-    const saved = await withRetry(() => postToDrive({
+    const saved = await postToDrive({
       action: "uploadChunk",
       token,
       folderId: started.folderId,
       index,
       data: uint8ToBase64(slice),
-    }));
+    });
     fileIds[index] = saved.fileId;
     sizes[index] = Number(saved.size) || slice.length;
     finished += 1;
@@ -65,12 +65,12 @@ export async function downloadReviewPdf(reviewId, chunkCount, onProgress, auth) 
   const parts = new Array(total);
   let finished = 0;
   await runPool(total, CONCURRENCY, async (index) => {
-    const chunk = await withRetry(() => postToDrive({
+    const chunk = await postToDrive({
       action: "getPdfChunk",
       reviewId,
       index,
       ...(auth || {}),
-    }));
+    });
     parts[index] = base64ToBytes(chunk.data || "");
     finished += 1;
     if (onProgress) onProgress(finished, total);
@@ -91,16 +91,4 @@ async function runPool(count, limit, worker) {
   const width = Math.min(limit, count);
   for (let i = 0; i < width; i += 1) workers.push(run());
   await Promise.all(workers);
-}
-
-async function withRetry(fn) {
-  let error;
-  for (let attempt = 0; attempt < 3; attempt += 1) {
-    try {
-      return await fn();
-    } catch (err) {
-      error = err;
-    }
-  }
-  throw error;
 }
