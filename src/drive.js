@@ -9,6 +9,7 @@ const READ_ACTIONS = new Set([
   "reviewGate",
   "getPdfChunk",
   "lock",
+  "uploadChunk",
 ]);
 
 const READ_ATTEMPTS = 4;
