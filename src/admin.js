@@ -1,4 +1,5 @@
 import { driveConfigured, postToDrive } from "./drive.js";
+import { buildSubmissionPdf, submissionPdfName } from "./submission-pdf.js";
 import { formatProcedureLine } from "./procedure-times.js";
 import { mountPrep } from "./prep.js";
 
@@ -149,12 +150,41 @@ function renderDetail(submission) {
     }
   }
 
+  const actions = document.createElement("div");
+  actions.className = "actions";
+  const download = document.createElement("button");
+  download.type = "button";
+  download.className = "button button-primary";
+  download.textContent = "Download PDF";
+  download.addEventListener("click", () => downloadPdf(submission, download));
   const remove = document.createElement("button");
   remove.type = "button";
   remove.className = "button button-secondary";
   remove.textContent = "Delete";
   remove.addEventListener("click", () => deleteSubmission(submission));
-  detail.append(remove);
+  actions.append(download, remove);
+  detail.append(actions);
+}
+
+async function downloadPdf(submission, button) {
+  const original = button.textContent;
+  button.disabled = true;
+  button.textContent = "Preparing PDF…";
+  try {
+    const bytes = await buildSubmissionPdf(submission);
+    const blob = new Blob([bytes], { type: "application/pdf" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = submissionPdfName(submission);
+    link.click();
+    URL.revokeObjectURL(url);
+  } catch (err) {
+    showMessage(boardMessage, err.message || "Could not build the PDF.", "error");
+  } finally {
+    button.disabled = false;
+    button.textContent = original;
+  }
 }
 
 function resetDetail() {

@@ -30,9 +30,20 @@ body {
 
 .layout {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: minmax(0, 1fr) 8px minmax(0, 1fr);
   height: 100vh;
   height: 100dvh;
+}
+
+.split-divider {
+  cursor: col-resize;
+  background: #d5e0ea;
+  touch-action: none;
+}
+
+.split-divider:hover,
+.split-divider.is-dragging {
+  background: var(--accent);
 }
 
 .pane {
@@ -411,6 +422,10 @@ select:focus-visible,
     grid-template-rows: minmax(0, 1.7fr) minmax(0, 1fr);
   }
 
+  .split-divider {
+    display: none;
+  }
+
   .pane-form {
     padding: 1.1rem 1rem 1.5rem;
   }
@@ -717,14 +732,38 @@ body.is-gated .layout {
   height: 100%;
 }
 
-.toc-drawer {
-  max-height: 38%;
+.page-picker-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  gap: 0.45rem;
+}
+
+.page-picker-main {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.page-picker-toc {
+  width: 240px;
+  flex: 0 0 240px;
+  min-height: 0;
   overflow: auto;
-  margin-bottom: 0.5rem;
-  padding: 0.35rem 0.2rem;
   border: 1px solid var(--line);
   border-radius: 10px;
   background: #fff;
+}
+
+.toc-drawer {
+  max-height: none;
+  overflow: visible;
+  margin: 0;
+  padding: 0.35rem 0.2rem;
+  border: 0;
+  background: transparent;
 }
 
 .toc-drawer-overlay {
@@ -820,6 +859,13 @@ body.is-gated .layout {
   color: var(--accent-dark);
   font-size: 0.92rem;
   font-weight: 600;
+}
+
+.basic-value {
+  margin: 0;
+  padding: 0.45rem 0.6rem;
+  border-radius: 8px;
+  background: #f4f8fb;
 }
 
 .reference-stage canvas {

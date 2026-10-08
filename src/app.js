@@ -1,7 +1,7 @@
 import { driveConfigured, postToDrive } from "./drive.js";
 import { openPdf } from "./pdfjs.js";
 import { PROCEDURE_QUESTION_ID, formatProcedureLine, normalizeProcedureTimes } from "./procedure-times.js";
-import { buildSegments, clampIncidentCount, MAX_INCIDENTS } from "./questions.js";
+import { basicDetailsSegment, buildSegments, clampIncidentCount, emptyBasicDetails, MAX_INCIDENTS } from "./questions.js";
 import { createReferenceView } from "./reference-view.js";
 import { downloadReviewPdf } from "./review-transfer.js";
 
@@ -13,6 +13,7 @@ let reviewMode = false;
 let reviewName = "";
 let reviewPages = {};
 let procedureTimes = { start: "", end: "" };
+let reviewBasicDetails = emptyBasicDetails();
 let incidentCount = 0;
 let segments = buildSegments(0);
 let activeQuestionId = "";
@@ -94,10 +95,45 @@ function saveState() {
 function renderForm(answers) {
   controls.clear();
   form.replaceChildren();
+  if (reviewMode) form.append(renderBasicSummary(reviewBasicDetails));
 
   for (const segment of segments) {
     form.append(renderSegment(segment, answers));
   }
+}
+
+function detailsFromReview(value) {
+  const details = emptyBasicDetails();
+  if (!value || typeof value !== "object") return details;
+  for (const question of basicDetailsSegment.questions) {
+    details[question.id] = value[question.id] == null ? "" : String(value[question.id]);
+  }
+  return details;
+}
+
+function renderBasicSummary(details) {
+  const section = document.createElement("section");
+  section.className = "segment";
+  const heading = document.createElement("h2");
+  heading.textContent = basicDetailsSegment.title;
+  section.append(heading);
+  const grid = document.createElement("div");
+  grid.className = "segment-fields";
+  for (const question of basicDetailsSegment.questions) {
+    const row = document.createElement("div");
+    row.className = `field${question.width === "half" ? " field-half" : ""}`;
+    const caption = document.createElement("span");
+    caption.className = "field-label";
+    caption.textContent = question.label;
+    const value = document.createElement("p");
+    value.className = "basic-value";
+    const raw = details && details[question.id] != null ? String(details[question.id]) : "";
+    value.textContent = raw || "—";
+    row.append(caption, value);
+    grid.append(row);
+  }
+  section.append(grid);
+  return section;
 }
 
 function renderSegment(segment, answers) {
@@ -398,7 +434,15 @@ async function copySummary(text, button) {
 }
 
 function answersForDrive(answers) {
-  return segments.map((segment) => ({
+  const basic = {
+    title: basicDetailsSegment.title,
+    fields: basicDetailsSegment.questions.map((question) => ({
+      id: question.id,
+      label: question.label,
+      value: reviewBasicDetails[question.id] || "",
+    })),
+  };
+  return [basic, ...segments.map((segment) => ({
     title: segment.title,
     fields: segment.questions.map((question) => ({
       id: question.id,
@@ -408,7 +452,7 @@ function answersForDrive(answers) {
         ? { procedureTimes: { start: procedureTimes.start || "", end: procedureTimes.end || "" } }
         : {}),
     })),
-  }));
+  }))];
 }
 
 function showSubmitStatus(message, tone) {
@@ -448,8 +492,16 @@ async function onSubmit(event) {
       payload.code = readAccessCode();
     }
     await postToDrive(payload);
+    if (reviewMode) {
+      showClosedReview();
+      return;
+    }
     showSubmitStatus("Submitted", "success");
   } catch (err) {
+    if (reviewMode && err.message === "This review is closed.") {
+      showClosedReview();
+      return;
+    }
     showSubmitStatus(err.message || "Could not save to Drive.", "error");
   } finally {
     submitButton.disabled = false;
@@ -686,6 +738,7 @@ async function enterReview() {
   reviewName = review.name || "Review";
   reviewPages = review.pages || {};
   procedureTimes = normalizeProcedureTimes(review.procedureTimes);
+  reviewBasicDetails = detailsFromReview(review.basicDetails);
   incidentCount = clampIncidentCount(review.incidentCount);
   segments = buildSegments(incidentCount);
   renderForm(loadState().answers);
@@ -850,3 +903,53 @@ pdfInput.addEventListener("change", () => {
   pdfInput.value = "";
   if (file) loadPdf(file);
 });
+
+const SPLIT_KEY = "peer-review-split";
+const splitLayout = document.querySelector(".layout");
+const splitDivider = document.querySelector("#split-divider");
+const splitNarrow = window.matchMedia("(max-width: 760px)");
+
+function applySplit(px) {
+  if (!splitLayout) return;
+  if (splitNarrow.matches || !px) {
+    splitLayout.style.gridTemplateColumns = "";
+    return;
+  }
+  splitLayout.style.gridTemplateColumns = `${px}px 8px minmax(0, 1fr)`;
+}
+
+function savedSplit() {
+  const value = Number(localStorage.getItem(SPLIT_KEY));
+  return Number.isFinite(value) && value > 0 ? value : 0;
+}
+
+applySplit(savedSplit());
+window.addEventListener("resize", () => applySplit(savedSplit()));
+
+if (splitDivider && splitLayout) {
+  splitDivider.addEventListener("pointerdown", (event) => {
+    if (splitNarrow.matches) return;
+    event.preventDefault();
+    splitDivider.setPointerCapture(event.pointerId);
+    splitDivider.classList.add("is-dragging");
+    const move = (moveEvent) => {
+      const rect = splitLayout.getBoundingClientRect();
+      const min = 280;
+      const max = rect.width - min - 8;
+      const next = Math.min(max, Math.max(min, moveEvent.clientX - rect.left));
+      applySplit(next);
+      localStorage.setItem(SPLIT_KEY, String(Math.round(next)));
+    };
+    const stop = () => {
+      splitDivider.classList.remove("is-dragging");
+      splitDivider.removeEventListener("pointermove", move);
+      splitDivider.removeEventListener("pointerup", stop);
+    };
+    splitDivider.addEventListener("pointermove", move);
+    splitDivider.addEventListener("pointerup", stop);
+  });
+  splitDivider.addEventListener("dblclick", () => {
+    localStorage.removeItem(SPLIT_KEY);
+    applySplit(0);
+  });
+}

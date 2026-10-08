@@ -51,7 +51,6 @@ export function createPagePicker(container) {
 
   const tocDrawer = document.createElement("div");
   tocDrawer.className = "toc-drawer";
-  tocDrawer.hidden = true;
 
   const grid = document.createElement("div");
   grid.className = "page-grid";
@@ -61,7 +60,16 @@ export function createPagePicker(container) {
   selectedHost.hidden = true;
   const selectedView = createReferenceView(selectedHost);
 
-  container.append(title, toolbar, message, tocDrawer, grid, selectedHost);
+  const pickerBody = document.createElement("div");
+  pickerBody.className = "page-picker-body";
+  const pickerMain = document.createElement("div");
+  pickerMain.className = "page-picker-main";
+  pickerMain.append(grid, selectedHost);
+  const tocColumn = document.createElement("aside");
+  tocColumn.className = "page-picker-toc";
+  tocColumn.append(tocDrawer);
+  pickerBody.append(pickerMain, tocColumn);
+  container.append(title, toolbar, message, pickerBody);
 
   const overlay = document.createElement("div");
   overlay.className = "page-overlay";
@@ -369,11 +377,11 @@ export function createPagePicker(container) {
       header.className = "toc-row";
       if (item.items && item.items.length) {
         const nested = tocTree(item.items, onPick, depth + 1);
-        nested.hidden = depth >= 1;
+        nested.hidden = true;
         const twist = document.createElement("button");
         twist.type = "button";
         twist.className = "toc-twist";
-        twist.textContent = nested.hidden ? "▸" : "▾";
+        twist.textContent = "▸";
         twist.addEventListener("click", () => {
           nested.hidden = !nested.hidden;
           twist.textContent = nested.hidden ? "▸" : "▾";
@@ -435,7 +443,7 @@ export function createPagePicker(container) {
   }
 
   contentsButton.addEventListener("click", () => {
-    tocDrawer.hidden = !tocDrawer.hidden;
+    tocColumn.scrollTop = 0;
   });
   overlayContents.addEventListener("click", () => {
     overlayToc.hidden = !overlayToc.hidden;
