@@ -84,21 +84,36 @@ function handleSubmit(body) {
   }
 
   var submittedAt = new Date().toISOString();
+  var basicDetails = review ? cleanBasicDetails(review.basicDetails) : cleanBasicDetails(null);
+  var procedureTimes = review ? cleanProcedureTimes(review.procedureTimes) : cleanProcedureTimes(null);
   var record = {
     submittedAt: submittedAt,
     reviewId: review ? review.id : "",
     reviewName: review ? review.name : "",
+    basicDetails: basicDetails,
+    procedureTimes: procedureTimes,
     answers: body.answers,
   };
-  var filename = submittedAt + " - MRN " + safeMrn(mrnFromAnswers(body.answers)) + ".json";
+  var mrn = basicDetails.mrn || mrnFromAnswers(body.answers);
+  var filename = submittedAt + " - MRN " + safeMrn(mrn) + ".json";
   var folder = review ? submissionsFolderFor(review) : getFolder();
   var file = folder.createFile(Utilities.newBlob(JSON.stringify(record, null, 2), MimeType.JSON, filename));
   enforcePrivate(file);
+  if (review) {
+    review.closed = true;
+    persistReview(review);
+    invalidateReview(review.id);
+  }
   var summary = submissionSummary(file.getId(), record);
 
   updateIndex(function (index) {
     index.submissions.unshift(summary);
-    if (summary.reviewId) bumpReviewCount(index, summary.reviewId, 1);
+    if (summary.reviewId) {
+      bumpReviewCount(index, summary.reviewId, 1);
+      for (var i = 0; i < index.reviews.length; i++) {
+        if (index.reviews[i].id === summary.reviewId) index.reviews[i].closed = true;
+      }
+    }
   });
   return { ok: true };
 }
@@ -363,6 +378,7 @@ function handleSaveReview(body) {
     pages: pages.value,
     sourcePages: source.value || (existing && !(review.pdfChunks && review.pdfChunks.length) ? existing.sourcePages || null : null),
     procedureTimes: cleanProcedureTimes(review.procedureTimes),
+    basicDetails: cleanBasicDetails(review.basicDetails == null && existing ? existing.basicDetails : review.basicDetails),
     accessCode: access.code,
     accessCodeSalt: access.salt,
     accessCodeHash: access.hash,
@@ -434,6 +450,7 @@ function publicReview(review) {
     sourcePages: sourcePagesForClient(review.sourcePages),
     pdfChunkCount: review.pdfChunks ? review.pdfChunks.length : 0,
     procedureTimes: cleanProcedureTimes(review.procedureTimes),
+    basicDetails: cleanBasicDetails(review.basicDetails),
   };
 }
 
@@ -461,6 +478,30 @@ function internalReviewSummary(review, submissionCount) {
     hasCode: !!review.accessCodeHash,
     closed: !!review.closed,
   };
+}
+
+function cleanBasicDetails(value) {
+  var src = value && typeof value === "object" ? value : {};
+  var status = String(src.status || "").trim();
+  return {
+    mrn: clipText(src.mrn, 80),
+    date: cleanDate(src.date),
+    status: status === "Open" || status === "Closed" ? status : "",
+    reviewer: clipText(src.reviewer, 160),
+    providerName: clipText(src.providerName, 160),
+    procedurePerformed: clipText(src.procedurePerformed, 240),
+    incidentNumber: clipText(src.incidentNumber, 80),
+  };
+}
+
+function clipText(value, max) {
+  return String(value || "").replace(/^\s+|\s+$/g, "").substring(0, max);
+}
+
+function cleanDate(value) {
+  var text = String(value || "").replace(/^\s+|\s+$/g, "");
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(text)) return "";
+  return text;
 }
 
 function cleanProcedureTimes(value) {
@@ -650,6 +691,8 @@ function readSubmission(file) {
     if (data && data.answers) answers = data.answers;
     if (data && data.reviewId) reviewId = data.reviewId;
     if (data && data.reviewName) reviewName = data.reviewName;
+    var basicDetails = data && data.basicDetails ? cleanBasicDetails(data.basicDetails) : cleanBasicDetails(null);
+    var procedureTimes = data && data.procedureTimes ? cleanProcedureTimes(data.procedureTimes) : cleanProcedureTimes(null);
   } catch (err) {
     answers = null;
   }
@@ -659,6 +702,8 @@ function readSubmission(file) {
     submittedAt: submittedAt,
     reviewId: reviewId,
     reviewName: reviewName,
+    basicDetails: typeof basicDetails === "undefined" ? cleanBasicDetails(null) : basicDetails,
+    procedureTimes: typeof procedureTimes === "undefined" ? cleanProcedureTimes(null) : procedureTimes,
     answers: answers,
   };
 }
@@ -669,9 +714,9 @@ function submissionSummary(id, record) {
     reviewId: record.reviewId || "",
     reviewName: record.reviewName || "",
     submittedAt: record.submittedAt || "",
-    mrn: mrnFromAnswers(record.answers),
+    mrn: (record.basicDetails && record.basicDetails.mrn) || mrnFromAnswers(record.answers),
     patientName: answerValue(record.answers, [], ["Patient name"]),
-    provider: answerValue(record.answers, ["providerName"], ["Provider Name"]),
+    provider: (record.basicDetails && record.basicDetails.providerName) || answerValue(record.answers, ["providerName"], ["Provider Name"]),
   };
 }
 

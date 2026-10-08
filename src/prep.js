@@ -12,7 +12,7 @@ import {
 } from "./procedure-times.js";
 import { createPagePicker } from "./page-picker.js";
 import { openPdf } from "./pdfjs.js";
-import { buildSegments, clampIncidentCount, MAX_INCIDENTS } from "./questions.js";
+import { basicDetailsSegment, buildSegments, clampIncidentCount, emptyBasicDetails, MAX_INCIDENTS } from "./questions.js";
 import { downloadReviewPdf, uploadPdf } from "./review-transfer.js";
 import { copyPdfPages } from "./trim-pdf.js";
 
@@ -134,6 +134,7 @@ export function mountPrep(root, options) {
       closed: false,
       pdfBytes: null,
       loadedSourcePages: null,
+      basicDetails: emptyBasicDetails(),
     };
   }
 
@@ -190,6 +191,15 @@ export function mountPrep(root, options) {
     return state.loadedSourcePages[pdfPage - 1] || pdfPage;
   }
 
+  function detailsFromReview(value) {
+    const details = emptyBasicDetails();
+    if (!value || typeof value !== "object") return details;
+    for (const question of basicDetailsSegment.questions) {
+      details[question.id] = value[question.id] == null ? "" : String(value[question.id]);
+    }
+    return details;
+  }
+
   function toEditorPages(pages, sourcePages) {
     if (!sourcePages || !sourcePages.length) return { ...(pages || {}) };
     const converted = {};
@@ -242,7 +252,7 @@ export function mountPrep(root, options) {
       meta.className = "admin-who";
       const count = Number(review.submissionCount) || 0;
       const incidents = clampIncidentCount(review.incidentCount);
-      meta.textContent = `${incidents} incident${incidents === 1 ? "" : "s"} · ${count} submission${count === 1 ? "" : "s"}`;
+      meta.textContent = `${incidents} incident${incidents === 1 ? "" : "s"} · ${count} submission${count === 1 ? "" : "s"}${review.closed ? " · Closed" : ""}`;
 
       const actions = document.createElement("div");
       actions.className = "prep-review-actions";
@@ -425,8 +435,55 @@ export function mountPrep(root, options) {
     return "Drop a reference PDF here, or choose a file.";
   }
 
+  function renderBasicEditor() {
+    const section = document.createElement("section");
+    section.className = "segment";
+    const heading = document.createElement("h2");
+    heading.textContent = basicDetailsSegment.title;
+    section.append(heading);
+    const grid = document.createElement("div");
+    grid.className = "segment-fields";
+    for (const question of basicDetailsSegment.questions) {
+      const label = document.createElement("label");
+      label.className = `field${question.width === "half" ? " field-half" : ""}`;
+      const caption = document.createElement("span");
+      caption.className = "field-label";
+      caption.textContent = question.label;
+      let input;
+      if (question.type === "select") {
+        input = document.createElement("select");
+        const blank = document.createElement("option");
+        blank.value = "";
+        blank.textContent = "Choose…";
+        input.append(blank);
+        for (const option of question.options || []) {
+          const node = document.createElement("option");
+          node.value = option;
+          node.textContent = option;
+          input.append(node);
+        }
+      } else {
+        input = document.createElement("input");
+        input.type = question.type === "date" ? "date" : "text";
+        if (question.placeholder) input.placeholder = question.placeholder;
+      }
+      input.value = state.basicDetails[question.id] || "";
+      input.addEventListener("input", () => {
+        state.basicDetails[question.id] = input.value;
+      });
+      input.addEventListener("change", () => {
+        state.basicDetails[question.id] = input.value;
+      });
+      label.append(caption, input);
+      grid.append(label);
+    }
+    section.append(grid);
+    return section;
+  }
+
   function renderQuestions(host) {
     host.replaceChildren();
+    host.append(renderBasicEditor());
     let activeRow = null;
     let activeSegment = null;
     let activeQuestion = null;
@@ -715,6 +772,7 @@ export function mountPrep(root, options) {
       closed: !!full.closed,
       pdfBytes: null,
       loadedSourcePages: sourcePages,
+      basicDetails: detailsFromReview(full.basicDetails),
     };
     pendingFile = null;
     pdfDoc = null;
@@ -845,6 +903,7 @@ export function mountPrep(root, options) {
         pages: storedPages,
         sourcePages,
         procedureTimes: normalizeProcedureTimes(state.procedureTimes),
+        basicDetails: { ...state.basicDetails },
         accessCode,
         closed: !!state.closed,
       };

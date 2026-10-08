@@ -1,47 +1,59 @@
-export const segments = [
-  {
-    title: "Basic Details",
-    questions: [
-      {
-        id: "mrn",
-        label: "MRN #",
-        type: "text",
-        placeholder: "Medical record number",
-      },
-      {
-        id: "date",
-        label: "Date",
-        type: "date",
-      },
-      {
-        id: "status",
-        label: "Status",
-        type: "select",
-        options: ["Open", "Closed"],
-      },
-      {
-        id: "reviewer",
-        label: "Reviewer",
-        type: "text",
-      },
-      {
-        id: "providerName",
-        label: "Provider Name",
-        type: "text",
-      },
-      {
-        id: "procedurePerformed",
-        label: "Procedure Performed",
-        type: "text",
-      },
-      {
-        id: "incidentNumber",
-        label: "Incident Number",
-        type: "text",
-      },
-    ],
-  },
+export const basicDetailsSegment = {
+  title: "Basic Details",
+  questions: [
+    {
+      id: "mrn",
+      label: "MRN #",
+      type: "text",
+      placeholder: "Medical record number",
+      width: "half",
+    },
+    {
+      id: "date",
+      label: "Date",
+      type: "date",
+      width: "half",
+    },
+    {
+      id: "status",
+      label: "Status",
+      type: "select",
+      options: ["Open", "Closed"],
+      width: "half",
+    },
+    {
+      id: "reviewer",
+      label: "Reviewer",
+      type: "text",
+      width: "half",
+    },
+    {
+      id: "providerName",
+      label: "Provider Name",
+      type: "text",
+      width: "half",
+    },
+    {
+      id: "procedurePerformed",
+      label: "Procedure Performed",
+      type: "text",
+      width: "half",
+    },
+    {
+      id: "incidentNumber",
+      label: "Incident Number",
+      type: "text",
+    },
+  ],
+};
 
+export function emptyBasicDetails() {
+  const details = {};
+  for (const question of basicDetailsSegment.questions) details[question.id] = "";
+  return details;
+}
+
+export const segments = [
   {
     title: "Chart Review",
     questions: [
