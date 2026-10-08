@@ -1,8 +1,11 @@
 var FOLDER_NAME = "peerapp submissions";
 var REVIEWS_FOLDER_NAME = "peerapp reviews";
+var TMP_FOLDER_NAME = "peerapp tmp";
 var FOLDER_ID_KEY = "SUBMISSIONS_FOLDER_ID";
 var REVIEWS_FOLDER_ID_KEY = "REVIEWS_FOLDER_ID";
+var TMP_FOLDER_ID_KEY = "TMP_FOLDER_ID";
 var INDEX_FILE_ID_KEY = "INDEX_FILE_ID";
+var INDEX_FILE_NAME = "peerapp index.json";
 var PASSWORD_KEY = "ADMIN_PASSWORD";
 var FAIL_KEY = "ADMIN_FAILS";
 var LOCK_KEY = "ADMIN_LOCK_UNTIL";
@@ -13,9 +16,12 @@ var GLOBAL_FAILS = 50;
 var GLOBAL_WINDOW_MS = 60 * 60 * 1000;
 var ADMIN_TOKEN_TTL = 7200;
 var MAX_PDF_BYTES = 45 * 1024 * 1024;
+var INLINE_PDF_LIMIT = 8 * 1024 * 1024;
 var MAX_PAGES_PER_QUESTION = 50;
-var CACHE_TTL = 300;
+var CACHE_TTL = 21600;
 var CACHE_VALUE_LIMIT = 90000;
+var FOLDER_GUARD_KEY = "folders-private";
+var DASHBOARD_FULL_LIMIT = 150;
 var RESAVE = "This review needs to be re-saved";
 
 function doGet() {
@@ -98,24 +104,24 @@ function handleSubmit(body) {
   var filename = submittedAt + " - MRN " + safeMrn(mrn) + ".json";
   var folder = review ? submissionsFolderFor(review) : getFolder();
   var file = folder.createFile(Utilities.newBlob(JSON.stringify(record, null, 2), MimeType.JSON, filename));
-  enforcePrivate(file);
   if (review) {
     review.closed = true;
     persistReview(review);
     invalidateReview(review.id);
+    cacheReview(review);
   }
-  var summary = submissionSummary(file.getId(), record);
+  var stored = submissionRecord(file.getId(), record, filename);
 
   updateIndex(function (index) {
-    index.submissions.unshift(summary);
-    if (summary.reviewId) {
-      bumpReviewCount(index, summary.reviewId, 1);
+    index.submissions.unshift(stored);
+    if (stored.reviewId) {
+      bumpReviewCount(index, stored.reviewId, 1);
       for (var i = 0; i < index.reviews.length; i++) {
-        if (index.reviews[i].id === summary.reviewId) index.reviews[i].closed = true;
+        if (index.reviews[i].id === stored.reviewId) index.reviews[i].closed = true;
       }
     }
   });
-  return { ok: true };
+  return { ok: true, closed: !!review, reviewId: review ? review.id : "" };
 }
 
 function handleReviewGate(body) {
@@ -221,17 +227,20 @@ function handleGetPdfChunk(body) {
 
 function handleDashboard() {
   var index = readIndex();
+  if (needsSubmissionBodies(index) || needsChunkCounts(index)) index = hydrateIndex(index);
   return {
     ok: true,
     reviews: index.reviews.map(publicReviewSummary),
-    submissions: index.submissions,
+    submissions: submissionsForClient(index.submissions),
   };
 }
 
 function handleGetSubmission(body) {
   if (!body.id) return { ok: false, error: "Missing file id." };
   var index = readIndex();
-  if (!indexHasSubmission(index, body.id)) return { ok: false, error: "File not found." };
+  var found = findSubmission(index, body.id);
+  if (!found) return { ok: false, error: "File not found." };
+  if (found.answers) return { ok: true, submission: found };
   try {
     var file = DriveApp.getFileById(body.id);
     return { ok: true, submission: readSubmission(file) };
@@ -258,7 +267,7 @@ function handleDelete(body) {
     if (removed && removed.reviewId) bumpReviewCount(index, removed.reviewId, -1);
   });
   if (!removed) return { ok: false, error: "File not found." };
-  return { ok: true };
+  return { ok: true, id: body.id };
 }
 
 function handleUploadStart(body) {
@@ -272,7 +281,6 @@ function handleUploadStart(body) {
 
   var uploadId = Utilities.getUuid();
   var folder = getReviewsFolder().createFolder(uploadId);
-  enforcePrivate(folder);
   var meta = { size: size, chunkCount: chunkCount, folderId: folder.getId() };
   CacheService.getScriptCache().put("upload:" + uploadId, JSON.stringify(meta), 21600);
   return { ok: true, uploadId: uploadId, folderId: folder.getId() };
@@ -299,7 +307,6 @@ function handleUploadChunk(body) {
     return { ok: false, error: "Could not read a PDF piece." };
   }
   var file = folder.createFile(Utilities.newBlob(bytes, "application/octet-stream", String(body.index) + ".part"));
-  enforcePrivate(file);
   return { ok: true, fileId: file.getId(), index: Number(body.index), size: bytes.length };
 }
 
@@ -308,17 +315,18 @@ function handleUploadFinish(body) {
   if (!raw) return { ok: false, error: "That upload has expired. Start again." };
   var meta = JSON.parse(raw);
   var ids = body.fileIds;
-  if (!ids || ids.length !== meta.chunkCount) {
+  var sizes = body.sizes;
+  if (!ids || !sizes || ids.length !== meta.chunkCount || sizes.length !== ids.length) {
     return { ok: false, error: "Upload is missing a piece. Try again." };
   }
 
   var sum = 0;
   for (var i = 0; i < ids.length; i++) {
-    try {
-      sum += DriveApp.getFileById(ids[i]).getSize();
-    } catch (err) {
+    var size = Number(sizes[i]);
+    if (!ids[i] || !isFinite(size) || size <= 0) {
       return { ok: false, error: "Upload is missing a piece. Try again." };
     }
+    sum += size;
   }
   if (sum !== meta.size) return { ok: false, error: "The PDF arrived incomplete. Try again." };
   return { ok: true, pdfChunks: ids, pdfSize: sum, folderId: meta.folderId };
@@ -342,10 +350,20 @@ function handleSaveReview(body) {
   if (source.error) return { ok: false, error: source.error };
 
   var existing = loadReview(review.id);
+  var access = cleanAccessCode(review.accessCode, existing);
+  if (access.error) return { ok: false, error: access.error };
+
   var pdfChunks;
   var folderId;
   var pdfSize;
-  if (review.pdfChunks && review.pdfChunks.length) {
+  if (review.inlinePdf) {
+    var attached = storeInlinePdf(review.inlinePdf);
+    if (!attached.ok) return attached;
+    pdfChunks = attached.pdfChunks;
+    folderId = attached.folderId;
+    pdfSize = attached.pdfSize;
+    if (existing && existing.folderId && existing.folderId !== folderId) trashFolder(existing.folderId);
+  } else if (review.pdfChunks && review.pdfChunks.length) {
     pdfChunks = review.pdfChunks;
     folderId = review.folderId;
     pdfSize = Number(review.pdfSize) || 0;
@@ -361,9 +379,6 @@ function handleSaveReview(body) {
     return { ok: false, error: "Upload a PDF first." };
   }
 
-  var access = cleanAccessCode(review.accessCode, existing);
-  if (access.error) return { ok: false, error: access.error };
-
   var record = {
     id: review.id,
     name: name,
@@ -376,7 +391,7 @@ function handleSaveReview(body) {
     pageCount: pageCount,
     incidentCount: incidentCount,
     pages: pages.value,
-    sourcePages: source.value || (existing && !(review.pdfChunks && review.pdfChunks.length) ? existing.sourcePages || null : null),
+    sourcePages: source.value || (existing && !review.inlinePdf && !(review.pdfChunks && review.pdfChunks.length) ? existing.sourcePages || null : null),
     procedureTimes: cleanProcedureTimes(review.procedureTimes),
     basicDetails: cleanBasicDetails(review.basicDetails == null && existing ? existing.basicDetails : review.basicDetails),
     accessCode: access.code,
@@ -388,7 +403,6 @@ function handleSaveReview(body) {
   };
 
   var saved = persistReview(record);
-  enforceReviewPrivacy(saved);
   invalidateReview(saved.id);
   cacheReview(saved);
 
@@ -436,7 +450,7 @@ function handleDeleteReview(body) {
     }
     index.submissions = submissions;
   });
-  return { ok: true };
+  return { ok: true, reviewId: review.id };
 }
 
 function publicReview(review) {
@@ -455,6 +469,8 @@ function publicReview(review) {
 }
 
 function publicReviewSummary(review) {
+  var chunks = Number(review.pdfChunkCount);
+  if (!chunks && review.pdfChunks) chunks = review.pdfChunks.length;
   return {
     id: review.id,
     name: review.name,
@@ -463,10 +479,12 @@ function publicReviewSummary(review) {
     submissionCount: review.submissionCount || 0,
     hasCode: !!(review.hasCode || review.accessCodeHash),
     closed: !!review.closed,
+    pdfChunkCount: chunks || 0,
   };
 }
 
 function internalReviewSummary(review, submissionCount) {
+  var chunks = review.pdfChunks ? review.pdfChunks.length : Number(review.pdfChunkCount) || 0;
   return {
     id: review.id,
     name: review.name,
@@ -477,6 +495,7 @@ function internalReviewSummary(review, submissionCount) {
     folderId: review.folderId || "",
     hasCode: !!review.accessCodeHash,
     closed: !!review.closed,
+    pdfChunkCount: chunks,
   };
 }
 
@@ -582,7 +601,6 @@ function persistReview(record) {
     try {
       var existing = DriveApp.getFileById(record.reviewFileId);
       existing.setContent(json);
-      enforcePrivate(existing);
       return record;
     } catch (err) {
       record.reviewFileId = "";
@@ -591,28 +609,39 @@ function persistReview(record) {
   var file = getReviewsFolder().createFile(Utilities.newBlob(json, MimeType.JSON, record.id + ".json"));
   record.reviewFileId = file.getId();
   file.setContent(JSON.stringify(record, null, 2));
-  enforcePrivate(file);
   return record;
 }
 
 function submissionsFolderFor(review) {
   if (review.submissionsFolderId) {
     try {
-      var existing = DriveApp.getFolderById(review.submissionsFolderId);
-      if (!existing.isTrashed()) return existing;
+      return DriveApp.getFolderById(review.submissionsFolderId);
     } catch (err) {
       review.submissionsFolderId = "";
     }
   }
   var created = getFolder().createFolder(review.id);
-  enforcePrivate(created);
   review.submissionsFolderId = created.getId();
-  if (review.reviewFileId || review.id) {
-    var saved = persistReview(review);
-    review.reviewFileId = saved.reviewFileId;
-    cacheReview(review);
-  }
   return created;
+}
+
+function storeInlinePdf(data) {
+  if (String(data || "").length > INLINE_PDF_LIMIT * 2) {
+    return { ok: false, error: "This PDF is too large to save in one step." };
+  }
+  var bytes;
+  try {
+    bytes = Utilities.base64Decode(data);
+  } catch (err) {
+    return { ok: false, error: "Could not read the PDF." };
+  }
+  if (!bytes || !bytes.length) return { ok: false, error: "That PDF is empty." };
+  if (bytes.length > INLINE_PDF_LIMIT) {
+    return { ok: false, error: "This PDF is too large to save in one step." };
+  }
+  var folder = getReviewsFolder().createFolder(Utilities.getUuid());
+  var file = folder.createFile(Utilities.newBlob(bytes, "application/octet-stream", "0.part"));
+  return { ok: true, pdfChunks: [file.getId()], folderId: folder.getId(), pdfSize: bytes.length };
 }
 
 function validReviewId(id) {
@@ -720,12 +749,146 @@ function submissionSummary(id, record) {
   };
 }
 
+function submissionRecord(id, record, name) {
+  var summary = submissionSummary(id, record);
+  summary.name = name || "";
+  summary.basicDetails = cleanBasicDetails(record.basicDetails);
+  summary.procedureTimes = cleanProcedureTimes(record.procedureTimes);
+  summary.answers = record.answers || null;
+  return summary;
+}
+
+function submissionListFields(item) {
+  return {
+    id: item.id,
+    name: item.name || "",
+    reviewId: item.reviewId || "",
+    reviewName: item.reviewName || "",
+    submittedAt: item.submittedAt || "",
+    mrn: item.mrn || "",
+    patientName: item.patientName || "",
+    provider: item.provider || "",
+  };
+}
+
+function submissionsForClient(list) {
+  var out = [];
+  for (var i = 0; i < list.length; i++) {
+    if (i < DASHBOARD_FULL_LIMIT && list[i].answers) out.push(list[i]);
+    else out.push(submissionListFields(list[i]));
+  }
+  return out;
+}
+
+function needsSubmissionBodies(index) {
+  var limit = Math.min(DASHBOARD_FULL_LIMIT, index.submissions.length);
+  for (var i = 0; i < limit; i++) {
+    if (!index.submissions[i] || index.submissions[i].bodyMissing) continue;
+    if (!index.submissions[i].answers) return true;
+  }
+  return false;
+}
+
+function needsChunkCounts(index) {
+  for (var i = 0; i < index.reviews.length; i++) {
+    var count = index.reviews[i].pdfChunkCount;
+    if (count === undefined || count === null || count === "") return true;
+  }
+  return false;
+}
+
+function hydrateIndex(index) {
+  var lock = LockService.getScriptLock();
+  lock.waitLock(30000);
+  try {
+    var fresh = readIndexCache() || readIndexFromDrive();
+    var changed = hydrateRecentSubmissions(fresh);
+    if (fillChunkCounts(fresh)) changed = true;
+    if (changed) {
+      capSubmissionDetails(fresh);
+      writeIndexFile(fresh);
+    }
+    writeIndexCache(fresh);
+    return fresh;
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function hydrateRecentSubmissions(index) {
+  var changed = false;
+  var limit = Math.min(DASHBOARD_FULL_LIMIT, index.submissions.length);
+  for (var i = 0; i < limit; i++) {
+    var current = index.submissions[i];
+    if (!current || current.answers || !current.id) continue;
+    try {
+      var file = DriveApp.getFileById(current.id);
+      var data = JSON.parse(file.getBlob().getDataAsString());
+      if (!data || !data.answers) {
+        current.bodyMissing = true;
+        changed = true;
+        continue;
+      }
+      index.submissions[i] = submissionRecord(file.getId(), data, file.getName());
+      changed = true;
+    } catch (err) {
+      current.bodyMissing = true;
+      changed = true;
+    }
+  }
+  return changed;
+}
+
+function fillChunkCounts(index) {
+  var changed = false;
+  for (var i = 0; i < index.reviews.length; i++) {
+    var row = index.reviews[i];
+    if (!(row.pdfChunkCount === undefined || row.pdfChunkCount === null || row.pdfChunkCount === "")) continue;
+    if (!row.reviewFileId) {
+      row.pdfChunkCount = 0;
+      changed = true;
+      continue;
+    }
+    try {
+      var review = JSON.parse(DriveApp.getFileById(row.reviewFileId).getBlob().getDataAsString());
+      row.pdfChunkCount = review && review.pdfChunks ? review.pdfChunks.length : 0;
+      changed = true;
+    } catch (err) {
+      row.pdfChunkCount = 0;
+      changed = true;
+    }
+  }
+  return changed;
+}
+
+function capSubmissionDetails(index) {
+  for (var i = DASHBOARD_FULL_LIMIT; i < index.submissions.length; i++) {
+    if (!index.submissions[i] || !index.submissions[i].answers) continue;
+    index.submissions[i] = submissionListFields(index.submissions[i]);
+  }
+}
+
+function findSubmission(index, id) {
+  for (var i = 0; i < index.submissions.length; i++) {
+    if (index.submissions[i].id === id) return index.submissions[i];
+  }
+  return null;
+}
+
 function readIndex() {
   var cached = readIndexCache();
   if (cached) return cached;
-  var index = readIndexFromDrive();
-  writeIndexCache(index);
-  return index;
+  var lock = LockService.getScriptLock();
+  lock.waitLock(30000);
+  try {
+    cached = readIndexCache();
+    if (cached) return cached;
+    var index = readIndexFromDrive();
+    writeIndexCache(index);
+    return index;
+  } finally {
+    lock.releaseLock();
+  }
 }
 
 function readIndexFromDrive() {
@@ -741,14 +904,19 @@ function readIndexFromDrive() {
 }
 
 function getIndexFile() {
-  var id = PropertiesService.getScriptProperties().getProperty(INDEX_FILE_ID_KEY);
-  if (!id) return null;
-  try {
-    var file = DriveApp.getFileById(id);
-    if (!file.isTrashed()) return file;
-  } catch (err) {
+  var props = PropertiesService.getScriptProperties();
+  var id = props.getProperty(INDEX_FILE_ID_KEY);
+  if (id) {
+    try {
+      return DriveApp.getFileById(id);
+    } catch (err) {
+    }
   }
-  return null;
+  var files = getFolder().getFilesByName(INDEX_FILE_NAME);
+  if (!files.hasNext()) return null;
+  var file = files.next();
+  props.setProperty(INDEX_FILE_ID_KEY, file.getId());
+  return file;
 }
 
 function rebuildIndex() {
@@ -794,8 +962,10 @@ function updateIndex(mutator) {
   var lock = LockService.getScriptLock();
   lock.waitLock(30000);
   try {
-    var index = readIndexFromDrive();
+    var index = readIndexCache();
+    if (!index) index = readIndexFromDrive();
     mutator(index);
+    capSubmissionDetails(index);
     writeIndexFile(index);
     writeIndexCache(index);
   } finally {
@@ -810,8 +980,7 @@ function writeIndexFile(index) {
     existing.setContent(json);
     return;
   }
-  var file = getFolder().createFile(Utilities.newBlob(json, MimeType.JSON, "peerapp index.json"));
-  enforcePrivate(file);
+  var file = getFolder().createFile(Utilities.newBlob(json, MimeType.JSON, INDEX_FILE_NAME));
   PropertiesService.getScriptProperties().setProperty(INDEX_FILE_ID_KEY, file.getId());
 }
 
@@ -882,7 +1051,7 @@ function eachSubmissionFile(visitor) {
   var files = parent.getFiles();
   while (files.hasNext()) {
     var file = files.next();
-    if (file.getName() === "peerapp index.json") continue;
+    if (file.getName() === INDEX_FILE_NAME) continue;
     if (isJsonName(file.getName())) visitor(file);
   }
   var folders = parent.getFolders();
@@ -1119,34 +1288,6 @@ function randomToken(length) {
   return out;
 }
 
-function enforceReviewPrivacy(review) {
-  if (review.folderId) {
-    try {
-      enforcePrivate(DriveApp.getFolderById(review.folderId));
-    } catch (err) {
-    }
-  }
-  if (review.submissionsFolderId) {
-    try {
-      enforcePrivate(DriveApp.getFolderById(review.submissionsFolderId));
-    } catch (err) {
-    }
-  }
-  if (review.reviewFileId) {
-    try {
-      enforcePrivate(DriveApp.getFileById(review.reviewFileId));
-    } catch (err) {
-    }
-  }
-  var chunks = review.pdfChunks || [];
-  for (var i = 0; i < chunks.length; i++) {
-    try {
-      enforcePrivate(DriveApp.getFileById(chunks[i]));
-    } catch (err) {
-    }
-  }
-}
-
 function enforcePrivate(item) {
   if (!item) return;
   try {
@@ -1231,22 +1372,33 @@ function getReviewsFolder() {
 }
 
 function getNamedFolder(name, propKey) {
+  var resolved = resolveNamedFolder(name, propKey);
+  if (resolved.fresh || !CacheService.getScriptCache().get(FOLDER_GUARD_KEY)) {
+    ensureTopFoldersPrivate();
+  }
+  return resolved.folder;
+}
+
+function resolveNamedFolder(name, propKey) {
   var props = PropertiesService.getScriptProperties();
   var cachedId = props.getProperty(propKey);
   if (cachedId) {
     try {
-      var cached = DriveApp.getFolderById(cachedId);
-      if (!cached.isTrashed()) return cached;
+      return { folder: DriveApp.getFolderById(cachedId), fresh: false };
     } catch (err) {
     }
   }
-
   var found = DriveApp.getFoldersByName(name);
   var folder = found.hasNext() ? found.next() : DriveApp.createFolder(name);
-  if (folder.isTrashed()) folder = DriveApp.createFolder(name);
-  enforcePrivate(folder);
   props.setProperty(propKey, folder.getId());
-  return folder;
+  return { folder: folder, fresh: true };
+}
+
+function ensureTopFoldersPrivate() {
+  CacheService.getScriptCache().put(FOLDER_GUARD_KEY, "1", CACHE_TTL);
+  enforcePrivate(resolveNamedFolder(FOLDER_NAME, FOLDER_ID_KEY).folder);
+  enforcePrivate(resolveNamedFolder(REVIEWS_FOLDER_NAME, REVIEWS_FOLDER_ID_KEY).folder);
+  enforcePrivate(resolveNamedFolder(TMP_FOLDER_NAME, TMP_FOLDER_ID_KEY).folder);
 }
 
 function trashNamed(folder, name) {

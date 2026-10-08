@@ -1,5 +1,5 @@
 import { REVIEW_LINK_PREFIX } from "./config.js";
-import { isPdfFile, MAX_PDF_BYTES } from "./bytes.js";
+import { INLINE_PDF_BYTES, isPdfFile, MAX_PDF_BYTES } from "./bytes.js";
 import { postToDrive } from "./drive.js";
 import { formatPageRange } from "./page-range.js";
 import {
@@ -57,6 +57,7 @@ export function mountPrep(root, options) {
   let pdfDoc = null;
   let pendingFile = null;
   let state = null;
+  let openGeneration = 0;
 
   function token() {
     return options.getToken();
@@ -356,9 +357,11 @@ export function mountPrep(root, options) {
     back.className = "button button-secondary";
     back.textContent = "Back";
     back.addEventListener("click", () => {
+      openGeneration += 1;
       editor.hidden = true;
       editor.replaceChildren();
       state = null;
+      showStatus("");
     });
     const accessRow = document.createElement("div");
     accessRow.className = "prep-access";
@@ -717,6 +720,7 @@ export function mountPrep(root, options) {
       return;
     }
     button.disabled = true;
+    showStatus(next ? "Closing review…" : "Reopening review…", "notice");
     try {
       const data = await postToDrive({
         action: "setReviewClosed",
@@ -725,6 +729,7 @@ export function mountPrep(root, options) {
         closed: next,
       });
       upsertReview(data.review);
+      showStatus(data.review && data.review.closed ? "Review closed." : "Review reopened.", "success");
       if (state && state.id === review.id) {
         state.closed = !!data.review.closed;
         const headerButton = editor.querySelector("#prep-closed-toggle");
@@ -738,26 +743,8 @@ export function mountPrep(root, options) {
     }
   }
 
-  async function editReview(review) {
-    showStatus("");
-    let full;
-    try {
-      const data = await postToDrive({
-        action: "getReviewAdmin",
-        token: token(),
-        reviewId: review.id,
-      });
-      full = data.review;
-    } catch (err) {
-      if (authFailed(err)) return;
-      showStatus(err.message || "Could not open the review.", "error");
-      return;
-    }
-
-    const sourcePages = Array.isArray(full.sourcePages) && full.sourcePages.length
-      ? full.sourcePages.map((page) => Number(page))
-      : null;
-    state = {
+  function editorStateFromReview(full, sourcePages) {
+    return {
       id: full.id,
       name: full.name || "",
       incidentCount: clampIncidentCount(full.incidentCount),
@@ -774,22 +761,111 @@ export function mountPrep(root, options) {
       loadedSourcePages: sourcePages,
       basicDetails: detailsFromReview(full.basicDetails),
     };
+  }
+
+  async function editReview(review) {
+    const generation = ++openGeneration;
+    state = {
+      id: review.id,
+      name: review.name || "",
+      incidentCount: clampIncidentCount(review.incidentCount),
+      hasPdf: true,
+      pageCount: 0,
+      pages: {},
+      activeId: "",
+      savedId: review.id,
+      procedureTimes: { ...EMPTY_PROCEDURE_TIMES },
+      timeFound: null,
+      accessCode: "",
+      closed: !!review.closed,
+      pdfBytes: null,
+      loadedSourcePages: null,
+      basicDetails: emptyBasicDetails(),
+    };
     pendingFile = null;
     pdfDoc = null;
     renderEditor();
+    showStatus("Loading review details…", "notice");
+    picker.showProgress("Loading review details…");
+
+    const knownChunks = Number(review.pdfChunkCount) || 0;
+    const reportPdf = (done, total) => {
+      if (generation !== openGeneration) return;
+      const text = `Loading reference PDF… part ${done} of ${total}`;
+      showStatus(text, "notice");
+      picker.showProgress(text);
+    };
+    let pdfFailure = null;
+    const pdfTask = knownChunks
+      ? downloadReviewPdf(review.id, knownChunks, reportPdf, { token: token() }).catch((err) => {
+        pdfFailure = err;
+        return null;
+      })
+      : null;
+
+    let full;
+    try {
+      const data = await postToDrive({
+        action: "getReviewAdmin",
+        token: token(),
+        reviewId: review.id,
+      });
+      full = data.review;
+    } catch (err) {
+      if (generation !== openGeneration) return;
+      openGeneration += 1;
+      if (authFailed(err)) return;
+      showStatus(err.message || "Could not open the review.", "error");
+      return;
+    }
+    if (generation !== openGeneration || !state || state.id !== review.id) return;
+
+    const sourcePages = Array.isArray(full.sourcePages) && full.sourcePages.length
+      ? full.sourcePages.map((page) => Number(page))
+      : null;
+    const draftName = state.name;
+    const draftCode = state.accessCode;
+    const draftCount = state.incidentCount;
+    const draftClosed = state.closed;
+    const draftDetails = state.basicDetails;
+    state = editorStateFromReview(full, sourcePages);
+    if (draftName !== (review.name || "")) state.name = draftName;
+    if (normalizeCode(draftCode)) state.accessCode = draftCode;
+    if (draftCount !== clampIncidentCount(review.incidentCount)) state.incidentCount = draftCount;
+    if (draftClosed !== !!review.closed) state.closed = draftClosed;
+    if (draftDetails && Object.values(draftDetails).some((value) => String(value || "").trim())) {
+      state.basicDetails = { ...draftDetails };
+    }
+    renderEditor();
+    showStatus("Loading reference PDF…", "notice");
     picker.showProgress("Loading reference PDF…");
     try {
-      const bytes = await downloadReviewPdf(full.id, full.pdfChunkCount, (done, total) => {
-        picker.showProgress(`Loading reference PDF… part ${done} of ${total}`);
-      }, { token: token() });
+      let bytes = null;
+      if (pdfTask) {
+        bytes = await pdfTask;
+        if (pdfFailure && Number(full.pdfChunkCount) !== knownChunks) {
+          pdfFailure = null;
+          bytes = await downloadReviewPdf(full.id, full.pdfChunkCount, reportPdf, { token: token() });
+        }
+      } else {
+        bytes = await downloadReviewPdf(full.id, full.pdfChunkCount, reportPdf, { token: token() });
+      }
+      if (pdfFailure) throw pdfFailure;
+      if (generation !== openGeneration || !state || state.id !== review.id) return;
+      if (!bytes) throw new Error("Could not load the reference PDF.");
       state.pdfBytes = bytes;
       pdfDoc = await openPdf(bytes);
+      if (generation !== openGeneration || !state || state.id !== review.id) return;
       picker.setPdf(pdfDoc, sourcePages);
       picker.showMessage("Choose a question to select pages.");
+      showStatus("");
       await refreshProcedureTimes(state.pages[PROCEDURE_QUESTION_ID] || [], true);
     } catch (err) {
+      if (generation !== openGeneration) return;
       if (authFailed(err)) return;
-      picker.showMessage(err.message || "Could not load the reference PDF.");
+      const message = err.message || "Could not load the reference PDF.";
+      showStatus(message, "error");
+      picker.showMessage(message);
     }
   }
 
@@ -922,17 +998,23 @@ export function mountPrep(root, options) {
           return;
         }
         const file = new File([trimmed], "review.pdf", { type: "application/pdf" });
+        showStatus(file.size <= INLINE_PDF_BYTES ? "Preparing the PDF…" : "Uploading the PDF…", "notice");
         const uploaded = await uploadPdf(file, token(), (done, total) => {
-          showStatus(`Uploading ${done} of ${total}...`, "notice");
+          showStatus(`Uploading part ${done} of ${total}…`, "notice");
         });
-        payload.pdfChunks = uploaded.pdfChunks;
-        payload.folderId = uploaded.folderId;
-        payload.pdfSize = uploaded.pdfSize;
+        if (uploaded.inlinePdf) {
+          payload.inlinePdf = uploaded.inlinePdf;
+          payload.pdfSize = uploaded.pdfSize;
+        } else {
+          payload.pdfChunks = uploaded.pdfChunks;
+          payload.folderId = uploaded.folderId;
+          payload.pdfSize = uploaded.pdfSize;
+        }
         payload._trimmedBytes = trimmed;
       }
       const trimmedBytes = payload._trimmedBytes;
       delete payload._trimmedBytes;
-      showStatus("Saving...", "notice");
+      showStatus("Saving review…", "notice");
       const saved = await postToDrive({
         action: "saveReview",
         token: token(),
@@ -970,15 +1052,19 @@ export function mountPrep(root, options) {
   async function deleteReview(review) {
     const ok = window.confirm("Delete this review? The PDF and its submissions will be moved to the trash in Google Drive.");
     if (!ok) return;
-    showStatus("");
+    showStatus("Deleting review…", "notice");
     try {
-      await postToDrive({ action: "deleteReview", token: token(), reviewId: review.id });
-      if (state && state.id === review.id) {
+      const data = await postToDrive({ action: "deleteReview", token: token(), reviewId: review.id });
+      const removedId = data.reviewId || review.id;
+      openGeneration += 1;
+      if (state && state.id === removedId) {
         editor.hidden = true;
         editor.replaceChildren();
         state = null;
       }
-      setReviews(reviews.filter((item) => item.id !== review.id));
+      setReviews(reviews.filter((item) => item.id !== removedId));
+      if (options.onReviewRemoved) options.onReviewRemoved(removedId);
+      showStatus("");
     } catch (err) {
       if (authFailed(err)) return;
       showStatus(err.message || "Could not delete the review.", "error");
@@ -986,6 +1072,7 @@ export function mountPrep(root, options) {
   }
 
   newButton.addEventListener("click", () => {
+    openGeneration += 1;
     state = blankState();
     pendingFile = null;
     pdfDoc = null;

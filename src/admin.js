@@ -24,6 +24,17 @@ let submissions = [];
 let selectedId = "";
 let submissionFilterValue = "all";
 let prep = null;
+const submissionCache = new Map();
+
+function rememberSubmission(submission) {
+  if (submission && submission.id && Array.isArray(submission.answers)) {
+    submissionCache.set(submission.id, submission);
+  }
+}
+
+function forgetSubmission(id) {
+  submissionCache.delete(id);
+}
 
 function showMessage(element, text, tone) {
   element.hidden = !text;
@@ -237,10 +248,15 @@ function fillReviewFilter(reviews) {
 
 function applyDashboard(data) {
   submissions = Array.isArray(data.submissions) ? data.submissions : [];
+  submissionCache.clear();
+  for (const item of submissions) rememberSubmission(item);
   prep.setReviews(Array.isArray(data.reviews) ? data.reviews : []);
   if (selectedId && !submissions.some((item) => item.id === selectedId)) {
     selectedId = "";
     resetDetail();
+  } else if (selectedId) {
+    const open = submissionCache.get(selectedId);
+    if (open) renderDetail(open);
   }
   renderList();
 }
@@ -254,6 +270,11 @@ async function loadDashboard() {
 async function openSubmission(summary) {
   selectedId = summary.id;
   renderList();
+  const cached = submissionCache.get(summary.id);
+  if (cached && Array.isArray(cached.answers)) {
+    renderDetail(cached);
+    return;
+  }
   detail.replaceChildren();
   const loading = document.createElement("p");
   loading.className = "admin-placeholder";
@@ -266,6 +287,7 @@ async function openSubmission(summary) {
       id: summary.id,
     });
     if (selectedId !== summary.id) return;
+    rememberSubmission(data.submission);
     renderDetail(data.submission);
   } catch (err) {
     if (isAuthFailure(err.message)) {
@@ -307,6 +329,7 @@ function lock() {
   const token = adminToken;
   adminToken = "";
   submissions = [];
+  submissionCache.clear();
   selectedId = "";
   sessionStorage.removeItem(TOKEN_KEY);
   sessionStorage.removeItem(OLD_PASSWORD_KEY);
@@ -331,11 +354,14 @@ async function deleteSubmission(submission) {
   const confirmed = window.confirm("Delete this submission? It will be moved to the trash in Google Drive.");
   if (!confirmed) return;
 
-  showMessage(boardMessage, "");
+  showMessage(boardMessage, "Deleting submission…", "notice");
   try {
-    await postToDrive({ action: "delete", token: adminToken, id: submission.id });
-    submissions = submissions.filter((item) => item.id !== submission.id);
-    if (selectedId === submission.id) {
+    const data = await postToDrive({ action: "delete", token: adminToken, id: submission.id });
+    const removedId = data.id || submission.id;
+    forgetSubmission(removedId);
+    submissions = submissions.filter((item) => item.id !== removedId);
+    showMessage(boardMessage, "");
+    if (selectedId === removedId) {
       selectedId = "";
       resetDetail();
     }
@@ -397,6 +423,16 @@ if (!driveConfigured()) {
       showMessage(loginMessage, message, "error");
     },
     onReviews: fillReviewFilter,
+    onReviewRemoved(id) {
+      const removed = submissions.filter((item) => item.reviewId === id);
+      for (const item of removed) forgetSubmission(item.id);
+      submissions = submissions.filter((item) => item.reviewId !== id);
+      if (selectedId && !submissions.some((item) => item.id === selectedId)) {
+        selectedId = "";
+        resetDetail();
+      }
+      renderList();
+    },
   });
 
   sessionStorage.removeItem(OLD_PASSWORD_KEY);
